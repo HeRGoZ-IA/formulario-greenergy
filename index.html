@@ -509,9 +509,11 @@ const ITEMS={
 };
 
 // ─── STATE ─────────────────────────────────────────────────────────────────
-const SK='grn_ei_v2';
+const URL_PARAMS=new URLSearchParams(window.location.search);
+const URL_CODE=URL_PARAMS.get('proyecto')||'';
+const SK=URL_CODE?'grn_ei_'+URL_CODE:'grn_ei_new';
 let cfg={dbl:false,disc:false};
-let gdata={cliente:'',dir:'',torre:'',ascensor:'',fecha:new Date().toISOString().split('T')[0],tecnico:'',codigo:'GRN-2024-001',marca:'',paradas:'',cap:'',vel:'',traccion:'Gearless',tension:'380 V',puertas:'Automáticas'};
+let gdata={cliente:'',dir:'',torre:'',ascensor:'',fecha:new Date().toISOString().split('T')[0],tecnico:'',codigo:URL_CODE,marca:'',paradas:'',cap:'',vel:'',traccion:'Gearless',tension:'380 V',puertas:'Automáticas'};
 let state={};
 let curSec=0;
 let online=navigator.onLine;
@@ -792,6 +794,14 @@ function restoreGen(){
       }
       buildAscId();
     }
+  }
+  // Lock codigo field if URL has code
+  const codEl=document.getElementById('g-cod');
+  if(codEl&&URL_CODE){
+    codEl.readOnly=true;
+    codEl.style.background='var(--g50)';
+    codEl.style.color='var(--g700)';
+    codEl.style.fontWeight='600';
   }
   const tra=document.getElementById('g-tra');
   if(tra) tra.value=gdata.traccion||'Gearless (sin engranajes)';
@@ -1082,7 +1092,8 @@ function buildPayload(){
     fechaEnvio: new Date().toISOString().split('T')[0],
     photosPending: photosPending,
     hallazgos: issues.length,
-    items: itemsArr
+    items: itemsArr,
+    esActualizacion: !!localStorage.getItem('grn_sent_'+URL_CODE)
   };
 }
 
@@ -1107,7 +1118,8 @@ async function submit(){
     });
     if(res.ok){
       toast('Registro enviado a Airtable ✓');
-      if(btn){ btn.textContent='✓ Enviado correctamente'; btn.style.background='var(--g400)'; btn.style.color='var(--g900)'; }
+      if(btn){ btn.textContent='✓ Enviado — toca para reenviar'; btn.style.background='var(--g400)'; btn.style.color='var(--g900)'; btn.disabled=false; delete btn.dataset.confirmed; }
+      localStorage.setItem('grn_sent_'+URL_CODE, new Date().toISOString());
       localStorage.removeItem('grn_pending_payload');
       save();
     } else {
@@ -1155,8 +1167,39 @@ function toast(msg){
 initState();
 load();
 updateConn();
-goSec(0);
-updateProg();
+
+if(!URL_CODE){
+  // No project code in URL — show welcome screen
+  document.getElementById('main').innerHTML=`
+    <div style="padding:32px 20px;max-width:480px;margin:0 auto;text-align:center">
+      <div style="width:64px;height:64px;background:var(--g100);border-radius:16px;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:28px">📋</div>
+      <h2 style="font-size:18px;font-weight:700;color:var(--n900);margin-bottom:10px">Formulario de estado inicial</h2>
+      <p style="font-size:13px;color:var(--n500);line-height:1.6;margin-bottom:24px">Este formulario debe abrirse con un código de proyecto. Contacta al coordinador para obtener el link correcto.</p>
+      <div style="background:var(--n100);border-radius:var(--r-lg);padding:16px;font-size:12px;color:var(--n600);text-align:left">
+        <div style="font-weight:600;margin-bottom:6px">Formato del link:</div>
+        <code style="font-size:11px;color:var(--g700)">...formulario-greenergy/?proyecto=GRN-2024-001</code>
+      </div>
+    </div>`;
+  document.getElementById('tabs').style.display='none';
+  document.getElementById('btm').style.display='none';
+} else {
+  // Has project code — check if resuming existing session
+  const existing=localStorage.getItem(SK);
+  if(existing){
+    const parsed=JSON.parse(existing);
+    const allItems=Object.values(ITEMS).flat();
+    const done=allItems.filter(it=>parsed.state&&parsed.state[it.id]?.cond).length;
+    if(done>0){
+      showResumeToast(done, allItems.length);
+    }
+  }
+  goSec(0);
+  updateProg();
+}
+
+function showResumeToast(done, total){
+  toast(`Retomando proyecto ${URL_CODE} — ${done}/${total} ítems registrados`);
+}
 </script>
 </body>
 </html>
