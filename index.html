@@ -135,6 +135,8 @@ body{font-family:var(--font);background:var(--n50);color:var(--n900);font-size:1
 .ph-box .ph-lbl{font-size:9px;color:var(--n400);margin-top:2px}
 .ph-box.shot .ph-ico{font-size:16px;color:var(--g500)}
 .ph-box.shot .ph-lbl{color:var(--g600);font-size:9px}
+.ph-del{position:absolute;top:2px;right:2px;width:18px;height:18px;background:rgba(0,0,0,.55);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;color:white;cursor:pointer;z-index:2;line-height:1}
+.ph-del:active{background:var(--red)}
 .ph-name{font-size:10px;color:var(--n400);text-align:center;max-width:78px;line-height:1.3}
 .ph-input{display:none}
 
@@ -938,20 +940,52 @@ function capPh(id,pi,inp){
   const file=inp.files[0];
   if(!state[id]) state[id]={cond:null,fields:{},photos:{}};
   state[id].photos[pi]=file.name;
+  if(!state[id].photoThumbs) state[id].photoThumbs={};
 
   const reader=new FileReader();
   reader.onload=e=>{
-    const box=document.querySelector(`#phi-${id}-${pi}`)?.previousElementSibling;
-    if(box){
-      box.classList.add('shot');
-      box.innerHTML=`<img src="${e.target.result}" alt="foto">`;
-    }
-    updateChip(id);
-    updateProg();
-    save();
-    toast('Foto guardada ✓');
+    // Create thumbnail via canvas — max 120x90px
+    const img=new Image();
+    img.onload=()=>{
+      const canvas=document.createElement('canvas');
+      const maxW=120,maxH=90;
+      let w=img.width,h=img.height;
+      if(w>maxW){h=Math.round(h*maxW/w);w=maxW;}
+      if(h>maxH){w=Math.round(w*maxH/h);h=maxH;}
+      canvas.width=w;canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      const thumb=canvas.toDataURL('image/jpeg',0.7);
+      state[id].photoThumbs[pi]=thumb;
+      const box=document.getElementById(`phbox-${id}-${pi}`);
+      if(box){
+        box.classList.add('shot');
+        box.innerHTML=`<img src="${thumb}" alt="foto"><div class="ph-del" onclick="event.stopPropagation();delPh('${id}',${pi})">✕</div>`;
+      }
+      updateChip(id);
+      updateProg();
+      save();
+      toast('Foto guardada ✓');
+    };
+    img.src=e.target.result;
   };
   reader.readAsDataURL(file);
+}
+
+function delPh(id,pi){
+  if(!state[id]) return;
+  delete state[id].photos[pi];
+  if(state[id].photoThumbs) delete state[id].photoThumbs[pi];
+  const box=document.getElementById(`phbox-${id}-${pi}`);
+  if(box){
+    box.classList.remove('shot');
+    box.innerHTML=`<div class="ph-ico">⊞</div><div class="ph-lbl">Tomar</div>`;
+  }
+  const inp=document.getElementById(`phi-${id}-${pi}`);
+  if(inp) inp.value='';
+  updateChip(id);
+  updateProg();
+  save();
+  toast('Foto eliminada');
 }
 
 function updateChip(id){
