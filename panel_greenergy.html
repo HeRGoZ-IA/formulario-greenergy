@@ -353,24 +353,32 @@ const PAQUETES = [
   { key:'PKG2', label:'Paquete 2 — Control electrónico', color:'#3b82f6',
     desc:'Control, encoder y caja de inspección siempre juntos. Cable viajero se incluye si su estado no es Bueno.',
     items:['cm04','cm08','tc01','re06'] },
-  { key:'PKG3A', label:'Paquete 3A — Operador de cabina', color:'#f59e0b',
-    desc:'Operador integrado (FERMATOR, SELCOM, etc.) — incluye motor + variador + mecanismo + biestables + banda infrarroja + gate switch.',
-    items:['tc02','tc03','tc04','tc05','tc06'] },
-  { key:'PKG3B', label:'Paquete 3B — Puertas de cabina', color:'#ef8c00',
-    desc:'Cambio de hojas de puertas de cabina. Se puede cotizar sin remodelación completa de cabina.',
-    items:[] },
-  { key:'PKG3C', label:'Paquete 3C — Puertas de hall', color:'#d97706',
-    desc:'Hojas, zapatas, llavín, operador, cerraduras y cableado de hall. Marcos y umbral solo si están dañados.',
-    items:['pu01','pu02','pu03','pu04','pu05','re08','pu08'] },
+  { key:'PKG3', label:'Paquete 3 — Puertas', color:'#f59e0b',
+    desc:'Sistema de puertas completo. Se puede cotizar por sub-paquete según necesidad.',
+    subpkgs:[
+      { key:'PKG3A', label:'3A — Operador de cabina',
+        desc:'Operador integrado (FERMATOR, SELCOM, etc.) — incluye motor + variador + mecanismo + biestables + banda infrarroja + gate switch.',
+        items:['tc02','tc03','tc04','tc05','tc06'] },
+      { key:'PKG3B', label:'3B — Puertas de cabina',
+        desc:'Cambio de hojas de puertas de cabina. Se puede cotizar sin remodelación completa de cabina.',
+        items:[] },
+      { key:'PKG3C', label:'3C — Puertas de hall',
+        desc:'Hojas, zapatas, llavín, operador, cerraduras y cableado de hall. Marcos y umbral solo si están dañados.',
+        items:['pu01','pu02','pu03','pu04','pu05','re08','pu08'] },
+    ]},
   { key:'PKG4', label:'Paquete 4 — Seguridades', color:'#8b5cf6',
     desc:'Limitador, paracaídas, buffers y cableado de seguridades del hueco.',
     items:['cm05','tc11','fo04','fo05','fo06','fo03'] },
-  { key:'PKG5A', label:'Paquete 5A — Remodelación cabina', color:'#0d4f6e',
-    desc:'Piso, techo interior, enchape/paredes, pasamanos, espejo e iluminación/ventilación.',
-    items:['ca07','ca08','ca09','ca10','ca11','ca12'] },
-  { key:'PKG5B', label:'Paquete 5B — Señalización', color:'#1e6a8a',
-    desc:'Botoneras de cabina, indicador de posición, citófono, alarma, luz de emergencia, botoneras e indicadores de hall.',
-    items:['ca01','ca02','ca03','ca04','ca05','ca06','pu06','pu07'] },
+  { key:'PKG5', label:'Paquete 5 — Cabina', color:'#0d4f6e',
+    desc:'Modernización de cabina interior. Se puede cotizar remodelación y señalización por separado.',
+    subpkgs:[
+      { key:'PKG5A', label:'5A — Remodelación',
+        desc:'Piso, techo interior, enchape/paredes, pasamanos, espejo e iluminación/ventilación.',
+        items:['ca07','ca08','ca09','ca10','ca11','ca12'] },
+      { key:'PKG5B', label:'5B — Señalización',
+        desc:'Botoneras de cabina, indicador de posición, citófono, alarma, luz de emergencia, botoneras e indicadores de hall.',
+        items:['ca01','ca02','ca03','ca04','ca05','ca06','pu06','pu07'] },
+    ]},
   { key:'PKG6', label:'Paquete 6 — Zapatas y contrapeso', color:'#64748b',
     desc:'Zapatas de cabina y contrapeso, contrapeso. Para guías se ofrece realineación, no cambio.',
     items:['re01','re02','re03','re04','re05'] },
@@ -758,94 +766,72 @@ function renderDecisiones(p){
     </div>`;
   }
 
-  PAQUETES.forEach(pkg => {
-    const pkgItems = getPkgItems(pkg, is21, items);
+  // Helper to get all items from a pkg (including subpkgs)
+  function getAllPkgItems(pkg){
+    if(pkg.subpkgs) return pkg.subpkgs.flatMap(sp => getPkgItems(sp, is21, items));
+    return getPkgItems(pkg, is21, items);
+  }
 
-    const critCount = pkgItems.filter(i => {
-      const c = normCond(i.fields['Condición']);
-      return c === 'bad' || c === 'absent';
-    }).length;
-    const totalItems = pkgItems.length;
-    const decCount = pkgItems.filter(it => {
-      const iid = it.fields['ID ítem'] || '';
-      const raw = iid.includes('_') ? iid.split('_')[1] : iid;
+  // Pre-init decisionState for all items so they show "Pendiente por definir"
+  PAQUETES.forEach(pkg => {
+    getAllPkgItems(pkg).forEach(it => {
+      const iid = it.fields['ID ítem']||'';
+      const raw = iid.includes('_')?iid.split('_')[1]:iid;
       const key = getItemDecKey(pid, pkg.key, raw);
-      const d = decisionState[key]?.decision || '';
-      return d && d !== 'Pendiente por definir';
+      if(!decisionState[key]) decisionState[key]={decision:'Pendiente por definir',obs:'',airtableId:null};
+    });
+  });
+
+  PAQUETES.forEach(pkg => {
+    const allPkgItems = getAllPkgItems(pkg);
+    const critCount = allPkgItems.filter(i=>{ const c=normCond(i.fields['Condición']); return c==='bad'||c==='absent'; }).length;
+    const totalItems = allPkgItems.length;
+    const decCount = allPkgItems.filter(it=>{
+      const iid=it.fields['ID ítem']||''; const raw=iid.includes('_')?iid.split('_')[1]:iid;
+      const d=decisionState[getItemDecKey(pid,pkg.key,raw)]?.decision||'';
+      return d && d!=='Pendiente por definir';
     }).length;
-    const pkgStatusLbl = totalItems === 0 ? 'Sin ítems' : decCount === totalItems ? 'Completo' : decCount > 0 ? `${decCount}/${totalItems}` : 'Sin definir';
-    const pkgStatusCls = totalItems === 0 ? 'sin' : decCount === totalItems ? 'mant' : decCount > 0 ? 'segunda' : 'sin';
+    const pkgStatusLbl = totalItems===0?'Sin ítems':decCount===totalItems?'Completo':decCount>0?`${decCount}/${totalItems}`:'Sin definir';
+    const pkgStatusCls = totalItems===0?'sin':decCount===totalItems?'mant':decCount>0?'segunda':'sin';
+    const color = pkg.color||'#64748b';
 
     html += `<div class="pkg-decision">
       <div class="pkg-dec-hdr" onclick="togPkg('${pkg.key}')">
-        <div class="pkg-dot" style="background:${pkg.color}"></div>
+        <div class="pkg-dot" style="background:${color}"></div>
         <div class="pkg-dec-title">${pkg.label}</div>
-        ${critCount ? `<span class="pkg-items-preview">⚠ ${critCount} crítico${critCount>1?'s':''}</span>` : ''}
-        <span class="pkg-dec-status ${pkgStatusCls}">${pkgStatusLbl}</span>
+        ${critCount?`<span class="pkg-items-preview">⚠ ${critCount} crítico${critCount>1?'s':''}</span>`:''}
+        <span class="pkg-dec-status ${pkgStatusCls}" id="pkgstatus-${pkg.key}">${pkgStatusLbl}</span>
         <span class="pkg-chev" id="pkgchev-${pkg.key}">▼</span>
       </div>
       <div class="pkg-dec-body" id="pkgbody-${pkg.key}">
         <div class="pkg-context">${pkg.desc}</div>`;
 
-    if(pkg.key === 'PKG1'){
-      html += `<div class="traccion-note">
-        Tracción: <strong>${f['Tracción'] || f['traccion'] || 'No especificada'}</strong> — 
-        ${is21 ? pkg.nota21 : pkg.nota11}
-      </div>`;
-    }
+    if(pkg.key==='PKG1') html += `<div class="traccion-note">Tracción: <strong>${f['Tracción']||f['traccion']||'No especificada'}</strong> — ${is21?pkg.nota21:pkg.nota11}</div>`;
+    if(pkg.key==='PKG6') html += `<div class="traccion-note" style="border-color:rgba(100,116,139,.4)">⚠ Para guías (re01, re02) se ofrece <strong>realineación</strong>, no cambio.</div>`;
 
-    if(pkg.key === 'PKG6'){
-      html += `<div class="traccion-note" style="border-color:rgba(100,116,139,.4)">
-        ⚠ Para guías de cabina y contrapeso (re01, re02) se ofrece <strong>realineación</strong>, no cambio.
-      </div>`;
-    }
-
-    if(pkgItems.length){
-      html += `<div class="pkg-items-detail">`;
-      pkgItems.forEach(it => {
-        const nombre = it.fields['Nombre del ítem'] || '—';
-        const iid = it.fields['ID ítem'] || '';
-        const raw = iid.includes('_') ? iid.split('_')[1] : iid;
-        const cond = normCond(it.fields['Condición']);
-        const itemDecKey = getItemDecKey(pid, pkg.key, raw);
-        const itemDec = decisionState[itemDecKey] || { decision:'', obs:'' };
-        const decLabel = itemDec.decision || '';
-        const decCls = decLabel === 'Vender Nuevo' ? 'nuevo' : decLabel === 'Vender de Segunda' ? 'segunda' : decLabel === 'Vender Mantenimiento' ? 'mant' : decLabel === 'No aplica' ? 'na' : '';
-        const dropId = `drop-${itemDecKey}`;
-
-        html += `<div style="border-bottom:1px solid rgba(255,255,255,.05)">
-          <div style="display:flex;align-items:center;gap:10px;padding:9px 4px;cursor:pointer" onclick="togItemDrop('${dropId}')">
-            <span style="font-family:var(--mono);font-size:10px;color:var(--n500);width:44px;flex-shrink:0">${raw}</span>
-            <span style="flex:1;font-size:13px;color:var(--n200)">${nombre}</span>
-            <span class="cond-pill ${cond||'none'}" style="font-size:10px">${condText(cond)}</span>
-            ${decLabel ? `<span class="pkg-dec-status ${decCls}" style="font-size:10px;padding:2px 8px;white-space:nowrap">${decLabel}</span>` : `<span style="font-size:11px;color:var(--n600);flex-shrink:0">— Sin definir</span>`}
-            <span style="font-size:10px;color:var(--n600);flex-shrink:0;margin-left:4px">▼</span>
-          </div>
-          <div id="${dropId}" style="display:none;padding:8px 0 12px 54px">
-            ${DEC_OPTS.map(opt => {
-              const cls = opt === 'Vender Nuevo' ? 'nuevo' : opt === 'Vender de Segunda' ? 'segunda' : opt === 'Vender Mantenimiento' ? 'mant' : opt === 'No aplica' ? 'na' : '';
-              const sel = itemDec.decision === opt ? 'selected' : '';
-              return `<div style="padding:3px 0"><button class="dec-opt ${cls} ${sel}" style="font-size:12px;padding:6px 14px;min-width:200px;text-align:left" onclick="selectItemDec('${itemDecKey}','${opt}',this,'${dropId}')">${opt}</button></div>`;
-            }).join('')}
-          </div>
-        </div>`;
+    if(pkg.subpkgs){
+      pkg.subpkgs.forEach(sp => {
+        const spItems = getPkgItems(sp, is21, items);
+        html += `<div style="margin-bottom:14px">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:${color};padding:8px 0 6px;border-bottom:1px solid rgba(255,255,255,.07)">${sp.label}</div>
+          <div style="font-size:12px;color:var(--n500);padding:6px 0 8px;font-style:italic">${sp.desc}</div>`;
+        html += renderItemRows(spItems, pid, pkg.key);
+        html += `</div>`;
       });
-      html += `</div>
-      <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.06)">
-        <div class="dec-obs">
-          <label>Observaciones del paquete</label>
-          <textarea id="pkgobs-${pkg.key}" placeholder="Notas generales para este paquete..."></textarea>
-        </div>
-        <div style="display:flex;align-items:center;margin-top:8px">
-          <button class="btn-save-pkg" onclick="savePkg('${pkg.key}','${pid}')">Guardar decisiones</button>
-          <span class="save-ok" id="saveok-${pkg.key}">✓ Guardado</span>
-        </div>
-      </div>`;
     } else {
-      html += `<div style="font-size:12px;color:var(--n500);padding:8px 0;font-style:italic">Sin ítems del formulario para mostrar en este paquete.</div>`;
+      html += renderItemRows(allPkgItems, pid, pkg.key);
     }
 
-    html += `</div></div>`;
+    html += `<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.06)">
+      <div class="dec-obs"><label>Observaciones del paquete</label>
+        <textarea id="pkgobs-${pkg.key}" placeholder="Notas generales para este paquete..."></textarea>
+      </div>
+      <div style="display:flex;align-items:center;margin-top:8px">
+        <button class="btn-save-pkg" onclick="savePkg('${pkg.key}','${pid}')">Guardar decisiones</button>
+        <span class="save-ok" id="saveok-${pkg.key}">✓ Guardado</span>
+      </div>
+    </div>
+    </div></div>`;
   });
 
   html += '</div>';
@@ -870,6 +856,40 @@ function getPkgItems(pkg, is21, items){
   });
 }
 
+function renderItemRows(pkgItemsList, pid, pkgKey){
+  if(!pkgItemsList.length) return '<div style="font-size:12px;color:var(--n500);padding:6px 0;font-style:italic">Sin ítems del formulario.</div>';
+  let h = '<div class="pkg-items-detail">';
+  pkgItemsList.forEach(it => {
+    const nombre = it.fields['Nombre del ítem'] || '—';
+    const iid = it.fields['ID ítem'] || '';
+    const raw = iid.includes('_') ? iid.split('_')[1] : iid;
+    const cond = normCond(it.fields['Condición']);
+    const itemDecKey = getItemDecKey(pid, pkgKey, raw);
+    const itemDec = decisionState[itemDecKey] || { decision:'Pendiente por definir', obs:'' };
+    const decLabel = itemDec.decision || 'Pendiente por definir';
+    const decCls = decLabel==='Vender Nuevo'?'nuevo':decLabel==='Vender de Segunda'?'segunda':decLabel==='Vender Mantenimiento'?'mant':decLabel==='No aplica'?'na':'';
+    const dropId = `drop-${itemDecKey}`;
+    h += `<div style="border-bottom:1px solid rgba(255,255,255,.05)">
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 4px;cursor:pointer" onclick="togItemDrop('${dropId}')">
+        <span style="font-family:var(--mono);font-size:10px;color:var(--n500);width:44px;flex-shrink:0">${raw}</span>
+        <span style="flex:1;font-size:13px;color:var(--n200)">${nombre}</span>
+        <span class="cond-pill ${cond||'none'}" style="font-size:10px">${condText(cond)}</span>
+        <span class="pkg-dec-status ${decCls}" id="badge-${itemDecKey}" style="font-size:10px;padding:2px 8px;white-space:nowrap">${decLabel}</span>
+        <span style="font-size:10px;color:var(--n600);flex-shrink:0;margin-left:4px">▼</span>
+      </div>
+      <div id="${dropId}" style="display:none;padding:8px 0 12px 54px">
+        ${DEC_OPTS.map(opt => {
+          const cls = opt==='Vender Nuevo'?'nuevo':opt==='Vender de Segunda'?'segunda':opt==='Vender Mantenimiento'?'mant':opt==='No aplica'?'na':'';
+          const sel = itemDec.decision===opt?'selected':'';
+          return `<div style="padding:3px 0"><button class="dec-opt ${cls} ${sel}" style="font-size:12px;padding:6px 14px;min-width:200px;text-align:left" onclick="selectItemDec('${itemDecKey}','${opt}',this,'${dropId}')">${opt}</button></div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  });
+  h += '</div>';
+  return h;
+}
+
 function togItemDrop(dropId){
   const el = document.getElementById(dropId);
   if(!el) return;
@@ -879,66 +899,60 @@ function togItemDrop(dropId){
 }
 
 function selectItemDec(itemDecKey, value, btn, dropId){
-  // Update state
-  if(!decisionState[itemDecKey]) decisionState[itemDecKey] = { decision:'', obs:'', airtableId:null };
+  if(!decisionState[itemDecKey]) decisionState[itemDecKey] = { decision:'Pendiente por definir', obs:'', airtableId:null };
   decisionState[itemDecKey].decision = value;
   // Update dropdown selected state
-  btn.closest('[id^="drop-"]').querySelectorAll('.dec-opt').forEach(b => b.classList.remove('selected'));
+  document.getElementById(dropId).querySelectorAll('.dec-opt').forEach(b => b.classList.remove('selected'));
   btn.classList.add('selected');
-  // Update the row badge
-  const row = btn.closest('[style*="border-bottom"]');
-  if(row){
-    const badgeWrap = row.querySelector('[style*="display:flex"]');
-    if(badgeWrap){
-      const clsMap = {'Vender Nuevo':'nuevo','Vender de Segunda':'segunda','Vender Mantenimiento':'mant','No aplica':'na'};
-      const cls = clsMap[value] || '';
-      // Remove old badge/dash
-      const oldBadge = badgeWrap.querySelector('.pkg-dec-status, [style*="color:var(--n600)"]');
-      if(oldBadge) oldBadge.remove();
-      const badge = document.createElement('span');
-      badge.className = `pkg-dec-status ${cls}`;
-      badge.style.cssText = 'font-size:10px;padding:2px 8px';
-      badge.textContent = value;
-      badgeWrap.insertBefore(badge, badgeWrap.lastElementChild);
-    }
+  // Update badge
+  const clsMap = {'Vender Nuevo':'nuevo','Vender de Segunda':'segunda','Vender Mantenimiento':'mant','No aplica':'na'};
+  const badge = document.getElementById('badge-'+itemDecKey);
+  if(badge){
+    badge.textContent = value;
+    badge.className = `pkg-dec-status ${clsMap[value]||''}`;
+    badge.style.cssText = 'font-size:10px;padding:2px 8px;white-space:nowrap';
   }
   // Close dropdown
   document.getElementById(dropId).style.display = 'none';
-  // Update pkg header progress
   updatePkgProgress(itemDecKey);
 }
 
 function updatePkgProgress(itemDecKey){
-  // Re-count decisions for this package from DOM
-  const pkgKey = itemDecKey.split('_')[1];
-  const statusEl = document.getElementById(`pkgchev-${pkgKey}`)?.previousElementSibling;
+  const parts = itemDecKey.split('_');
+  if(parts.length < 2) return;
+  const pkgKey = parts[1];
+  const statusEl = document.getElementById(`pkgstatus-${pkgKey}`);
   if(!statusEl) return;
-  const total = Object.keys(decisionState).filter(k => k.includes(`_${pkgKey}_`)).length;
-  const done = Object.entries(decisionState).filter(([k,v]) => k.includes(`_${pkgKey}_`) && v.decision && v.decision !== 'Pendiente por definir').length;
-  if(total === 0) return;
-  statusEl.textContent = done === total ? 'Completo' : done > 0 ? `${done}/${total}` : 'Sin definir';
-  statusEl.className = `pkg-dec-status ${done === total ? 'mant' : done > 0 ? 'segunda' : 'sin'}`;
+  const entries = Object.entries(decisionState).filter(([k]) => { const p=k.split('_'); return p.length>=3 && p[1]===pkgKey; });
+  const total = entries.length;
+  const done = entries.filter(([,v]) => v.decision && v.decision!=='Pendiente por definir').length;
+  if(total===0) return;
+  statusEl.textContent = done===total?'Completo':done>0?`${done}/${total}`:'Sin definir';
+  statusEl.className = `pkg-dec-status ${done===total?'mant':done>0?'segunda':'sin'}`;
 }
 
 async function savePkg(pkgKey, pid){
   const obs = document.getElementById(`pkgobs-${pkgKey}`)?.value || '';
-  const pkgItems = Object.entries(decisionState).filter(([k]) => k.includes(`_${pkgKey}_`));
-  if(!pkgItems.length){ toast('Sin ítems que guardar'); return; }
+  // Get all entries for this package from decisionState
+  const pkgEntries = Object.entries(decisionState).filter(([k]) => {
+    const parts = k.split('_');
+    return parts.length >= 3 && parts[1] === pkgKey;
+  });
+  if(!pkgEntries.length){ toast('Sin ítems que guardar'); return; }
 
   let saved = 0;
-  for(const [key, state] of pkgItems){
-    const raw = key.split('_').pop();
+  for(const [key, st] of pkgEntries){
     const fields = {
       'ID decisión': key,
       'Paquete': pkgKey,
-      'Decisión': state.decision || 'Pendiente por definir',
+      'Decisión': st.decision || 'Pendiente por definir',
       'Observaciones': obs,
       'Proyecto': [pid],
       'Fecha decisión': new Date().toISOString().split('T')[0],
     };
     try {
-      if(state.airtableId){
-        await AT_PATCH(TBL_DECISIONES, state.airtableId, fields);
+      if(st.airtableId){
+        await AT_PATCH(TBL_DECISIONES, st.airtableId, fields);
       } else {
         const res = await AT_POST(TBL_DECISIONES, { fields });
         if(res.id){
