@@ -1213,8 +1213,7 @@ async function uploadPhotos(proyectoAirtableId, itemsMap){
   const btn = document.getElementById('sub-btn');
 
   for(const foto of fotos){
-    const rawItemId = foto.itemId.includes('_') ? foto.itemId.split('_').slice(1).join('_') : foto.itemId;
-    const itemAirtableId = itemsMap[rawItemId] || null;
+    const itemAirtableId = itemsMap[foto.itemId] || null;
     try {
       await fetch(WEBHOOK_FOTOS_URL, {
         method: 'POST',
