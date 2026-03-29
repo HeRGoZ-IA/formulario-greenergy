@@ -809,31 +809,38 @@ function renderDecisiones(p){
         const cond = normCond(it.fields['Condición']);
         const itemDecKey = getItemDecKey(pid, pkg.key, raw);
         const itemDec = decisionState[itemDecKey] || { decision:'', obs:'' };
+        const decLabel = itemDec.decision || '';
+        const decCls = decLabel === 'Vender Nuevo' ? 'nuevo' : decLabel === 'Vender de Segunda' ? 'segunda' : decLabel === 'Vender Mantenimiento' ? 'mant' : decLabel === 'No aplica' ? 'na' : '';
+        const dropId = `drop-${itemDecKey}`;
 
-        html += `<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:8px;margin-bottom:8px;overflow:hidden">
-          <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.05)">
-            <span class="pkg-item-id" style="width:44px;flex-shrink:0">${raw}</span>
-            <span class="pkg-item-name" style="flex:1;font-size:13px;font-weight:500;color:var(--n100)">${nombre}</span>
-            <span class="cond-pill ${cond||'none'}">${condText(cond)}</span>
+        html += `<div style="border-bottom:1px solid rgba(255,255,255,.05)">
+          <div style="display:flex;align-items:center;gap:10px;padding:9px 4px;cursor:pointer" onclick="togItemDrop('${dropId}')">
+            <span style="font-family:var(--mono);font-size:10px;color:var(--n500);width:44px;flex-shrink:0">${raw}</span>
+            <span style="flex:1;font-size:13px;color:var(--n200)">${nombre}</span>
+            <span class="cond-pill ${cond||'none'}" style="font-size:10px">${condText(cond)}</span>
+            ${decLabel ? `<span class="pkg-dec-status ${decCls}" style="font-size:10px;padding:2px 8px;white-space:nowrap">${decLabel}</span>` : `<span style="font-size:11px;color:var(--n600);flex-shrink:0">— Sin definir</span>`}
+            <span style="font-size:10px;color:var(--n600);flex-shrink:0;margin-left:4px">▼</span>
           </div>
-          <div style="padding:10px 12px">
-            <div class="dec-options" style="margin-bottom:8px;flex-wrap:wrap;gap:6px">
-              ${DEC_OPTS.map(opt => {
-                const cls = opt === 'Vender Nuevo' ? 'nuevo' : opt === 'Vender de Segunda' ? 'segunda' : opt === 'Vender Mantenimiento' ? 'mant' : opt === 'No aplica' ? 'na' : '';
-                const sel = itemDec.decision === opt ? 'selected' : '';
-                return `<button class="dec-opt ${cls} ${sel}" onclick="selectDec('${itemDecKey}','${opt}',this)" style="font-size:11px;padding:5px 10px">${opt}</button>`;
-              }).join('')}
-            </div>
-            <div style="display:flex;align-items:center;gap:8px">
-              <input type="text" id="obs-${itemDecKey}" placeholder="Observaciones..." value="${(itemDec.obs||'').replace(/"/g,'&quot;')}"
-                style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--n100);font-family:var(--font);outline:none">
-              <button class="btn-save-pkg" style="padding:6px 14px;font-size:12px" onclick="saveDec('${itemDecKey}','${pid}','${pkg.key}','${raw}','${nombre.replace(/'/g,"\'")}')">Guardar</button>
-              <span class="save-ok" id="saveok-${itemDecKey}">✓</span>
-            </div>
+          <div id="${dropId}" style="display:none;padding:8px 0 12px 54px">
+            ${DEC_OPTS.map(opt => {
+              const cls = opt === 'Vender Nuevo' ? 'nuevo' : opt === 'Vender de Segunda' ? 'segunda' : opt === 'Vender Mantenimiento' ? 'mant' : opt === 'No aplica' ? 'na' : '';
+              const sel = itemDec.decision === opt ? 'selected' : '';
+              return `<div style="padding:3px 0"><button class="dec-opt ${cls} ${sel}" style="font-size:12px;padding:6px 14px;min-width:200px;text-align:left" onclick="selectItemDec('${itemDecKey}','${opt}',this,'${dropId}')">${opt}</button></div>`;
+            }).join('')}
           </div>
         </div>`;
       });
-      html += `</div>`;
+      html += `</div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.06)">
+        <div class="dec-obs">
+          <label>Observaciones del paquete</label>
+          <textarea id="pkgobs-${pkg.key}" placeholder="Notas generales para este paquete..."></textarea>
+        </div>
+        <div style="display:flex;align-items:center;margin-top:8px">
+          <button class="btn-save-pkg" onclick="savePkg('${pkg.key}','${pid}')">Guardar decisiones</button>
+          <span class="save-ok" id="saveok-${pkg.key}">✓ Guardado</span>
+        </div>
+      </div>`;
     } else {
       html += `<div style="font-size:12px;color:var(--n500);padding:8px 0;font-style:italic">Sin ítems del formulario para mostrar en este paquete.</div>`;
     }
