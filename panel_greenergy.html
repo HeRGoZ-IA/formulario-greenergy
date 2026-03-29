@@ -345,33 +345,38 @@ const SECCIONES = [
 
 const PAQUETES = [
   { key:'PKG1', label:'Paquete 1 — Máquina de tracción', color:'#1a853b',
-    desc:'Cambio de máquina de tracción. Los cables, terminales y poleas de desvío se incluyen según el tipo de tracción del proyecto.',
-    items:{ '1:1':['cm01','cm02','cm03','tc12','re11'], '2:1':['cm01','cm02','cm03','cm13','tc13','re12'] },
-    itemsBase:['cm01','cm02','cm03'] },
+    desc:'Cambio de máquina de tracción. Cables, terminales y poleas de desvío se incluyen según tracción.',
+    items11:['cm01','cm02','cm03','tc12','re11'],
+    items21:['cm01','cm02','cm03','cm13','cm14','tc13','re12'],
+    nota11:'Tracción 1:1 — Terminales en techo de cabina y contrapeso.',
+    nota21:'Tracción 2:1 — Terminales anclados en piso del cuarto de máquinas. Poleas de desvío en techo de cabina y contrapeso.' },
   { key:'PKG2', label:'Paquete 2 — Control electrónico', color:'#3b82f6',
     desc:'Control, encoder y caja de inspección siempre juntos. Cable viajero se incluye si su estado no es Bueno.',
     items:['cm04','cm08','tc01','re06'] },
   { key:'PKG3A', label:'Paquete 3A — Operador de cabina', color:'#f59e0b',
-    desc:'Operador integrado (FERMATOR, SELCOM, etc.) — incluye motor + variador + mecanismo. No se cotizan por separado.',
+    desc:'Operador integrado (FERMATOR, SELCOM, etc.) — incluye motor + variador + mecanismo + biestables + banda infrarroja + gate switch.',
     items:['tc02','tc03','tc04','tc05','tc06'] },
   { key:'PKG3B', label:'Paquete 3B — Puertas de cabina', color:'#ef8c00',
     desc:'Cambio de hojas de puertas de cabina. Se puede cotizar sin remodelación completa de cabina.',
     items:[] },
   { key:'PKG3C', label:'Paquete 3C — Puertas de hall', color:'#d97706',
-    desc:'Hojas, zapatas, llavín, operador y cerraduras de hall. Marcos y umbral solo si están dañados. Incluye cableado de seguridades y botoneras de hall.',
-    items:['pu01','pu03','pu04','pu05','re08','pu08'] },
+    desc:'Hojas, zapatas, llavín, operador, cerraduras y cableado de hall. Marcos y umbral solo si están dañados.',
+    items:['pu01','pu02','pu03','pu04','pu05','re08','pu08'] },
   { key:'PKG4', label:'Paquete 4 — Seguridades', color:'#8b5cf6',
     desc:'Limitador, paracaídas, buffers y cableado de seguridades del hueco.',
     items:['cm05','tc11','fo04','fo05','fo06','fo03'] },
   { key:'PKG5A', label:'Paquete 5A — Remodelación cabina', color:'#0d4f6e',
-    desc:'Piso, techo interior, enchape/paredes, pasamanos, espejo e iluminación.',
+    desc:'Piso, techo interior, enchape/paredes, pasamanos, espejo e iluminación/ventilación.',
     items:['ca07','ca08','ca09','ca10','ca11','ca12'] },
   { key:'PKG5B', label:'Paquete 5B — Señalización', color:'#1e6a8a',
-    desc:'Botoneras de cabina, indicador de posición, citófono, alarma, luz de emergencia, botoneras y indicadores de hall.',
-    items:['ca01','ca03','ca04','ca05','ca06','pu06','pu07'] },
+    desc:'Botoneras de cabina, indicador de posición, citófono, alarma, luz de emergencia, botoneras e indicadores de hall.',
+    items:['ca01','ca02','ca03','ca04','ca05','ca06','pu06','pu07'] },
   { key:'PKG6', label:'Paquete 6 — Zapatas y contrapeso', color:'#64748b',
-    desc:'Zapatas de cabina y contrapeso, contrapeso y poleas de desvío. Incluye opción de realineación de guías como alternativa al cambio.',
-    items:['re04','re05','re03','cm14','tc13','re12'] },
+    desc:'Zapatas de cabina y contrapeso, contrapeso. Para guías se ofrece realineación, no cambio.',
+    items:['re01','re02','re03','re04','re05'] },
+  { key:'PKG7', label:'Paquete 7 — Ítems independientes', color:'#334155',
+    desc:'Ítems que se cotizan de forma independiente según estado registrado en el formulario.',
+    items:['cm06','cm07','cm09','cm10','cm11','cm12','tc07','tc08','tc09','tc10','fo01','fo02','fo07','fo08','fo09','fo10','fo11','re06','re07','re09','re10'] },
 ];
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
@@ -624,9 +629,9 @@ function renderInforme(p){
           ${aus  ? `<span class="sec-stat ausente">${aus} ausente${aus>1?'s':''}</span>` : ''}
           ${ok   ? `<span class="sec-stat ok">${ok} bueno${ok>1?'s':''}</span>` : ''}
         </div>
-        <span class="section-chev open" id="chev-${secId}">▼</span>
+        <span class="section-chev" id="chev-${secId}">▼</span>
       </div>
-      <div class="items-list" id="${secId}">`;
+      <div class="items-list" id="${secId}" style="display:none;padding-left:16px">`;
 
     secItems.forEach(it => {
       const iid   = it.id;
@@ -699,6 +704,10 @@ function renderInforme(p){
 }
 
 // ─── DECISIONES ───────────────────────────────────────────────────────────────
+const DEC_OPTS = ['Vender Nuevo','Vender de Segunda','Vender Mantenimiento','Pendiente por definir','No aplica'];
+
+function getItemDecKey(pid, pkgKey, itemId){ return `${pid.slice(-6)}_${pkgKey}_${itemId}`; }
+
 function renderDecisiones(p){
   const pid = p.id;
   const f   = p.fields;
@@ -709,14 +718,14 @@ function renderDecisiones(p){
     return Array.isArray(pLink) && pLink.includes(pid);
   });
 
-  // Build decisionState from existing records
+  // Build decisionState from existing records (keyed by ID decisión)
   decisionState = {};
   allDecisiones.filter(d => {
     const pLink = d.fields['Proyecto'];
     return Array.isArray(pLink) && pLink.includes(pid);
   }).forEach(d => {
-    const pkg = d.fields['Paquete'] || '';
-    decisionState[pkg] = {
+    const key = d.fields['ID decisión'] || '';
+    decisionState[key] = {
       decision: d.fields['Decisión'] || '',
       obs: d.fields['Observaciones'] || '',
       airtableId: d.id
@@ -747,70 +756,85 @@ function renderDecisiones(p){
 
   PAQUETES.forEach(pkg => {
     const pkgItems = getPkgItems(pkg, is21, items);
-    const dec = decisionState[pkg.key] || { decision:'', obs:'' };
-    const statusCls = !dec.decision ? 'sin' : dec.decision === 'Nuevo' ? 'nuevo' : dec.decision === 'Segunda' ? 'segunda' : dec.decision === 'Mantenimiento' ? 'mant' : 'na';
-    const statusLbl = !dec.decision ? 'Sin definir' : dec.decision;
 
+    // Count decisions made for this package
+    const decCount = pkgItems.filter(it => {
+      const iid = it.fields['ID ítem'] || '';
+      const raw = iid.includes('_') ? iid.split('_')[1] : iid;
+      const key = getItemDecKey(pid, pkg.key, raw);
+      return decisionState[key]?.decision && decisionState[key].decision !== 'Pendiente por definir';
+    }).length;
     const critCount = pkgItems.filter(i => {
       const c = normCond(i.fields['Condición']);
       return c === 'bad' || c === 'absent';
     }).length;
+    const totalItems = pkgItems.length;
+    const pkgStatusLbl = totalItems === 0 ? 'Sin ítems' : decCount === totalItems ? 'Completo' : decCount > 0 ? `${decCount}/${totalItems}` : 'Sin definir';
+    const pkgStatusCls = totalItems === 0 ? 'sin' : decCount === totalItems ? 'mant' : decCount > 0 ? 'segunda' : 'sin';
 
     html += `<div class="pkg-decision">
       <div class="pkg-dec-hdr" onclick="togPkg('${pkg.key}')">
         <div class="pkg-dot" style="background:${pkg.color}"></div>
         <div class="pkg-dec-title">${pkg.label}</div>
         ${critCount ? `<span class="pkg-items-preview">⚠ ${critCount} crítico${critCount>1?'s':''}</span>` : ''}
-        <span class="pkg-dec-status ${statusCls}">${statusLbl}</span>
+        <span class="pkg-dec-status ${pkgStatusCls}">${pkgStatusLbl}</span>
         <span class="pkg-chev" id="pkgchev-${pkg.key}">▼</span>
       </div>
       <div class="pkg-dec-body" id="pkgbody-${pkg.key}">
         <div class="pkg-context">${pkg.desc}</div>`;
 
-    // Tracción note for PKG1
     if(pkg.key === 'PKG1'){
       html += `<div class="traccion-note">
-        Tracción detectada: <strong>${f['Tracción'] || f['traccion'] || 'No especificada'}</strong> —
-        ${is21
-          ? 'Terminales anclados en piso del cuarto de máquinas. Poleas de desvío en techo de cabina y contrapeso.'
-          : 'Terminales en techo de cabina y contrapeso. Sin poleas de desvío en el recorrido.'}
+        Tracción: <strong>${f['Tracción'] || f['traccion'] || 'No especificada'}</strong> — 
+        ${is21 ? pkg.nota21 : pkg.nota11}
+      </div>`;
+    }
+
+    if(pkg.key === 'PKG6'){
+      html += `<div class="traccion-note" style="border-color:rgba(100,116,139,.4)">
+        ⚠ Para guías de cabina y contrapeso (re01, re02) se ofrece <strong>realineación</strong>, no cambio.
       </div>`;
     }
 
     if(pkgItems.length){
-      html += `<div class="pkg-items-detail"><div class="pkg-items-title">Ítems del formulario</div>`;
+      html += `<div class="pkg-items-detail">`;
       pkgItems.forEach(it => {
         const nombre = it.fields['Nombre del ítem'] || '—';
         const iid = it.fields['ID ítem'] || '';
         const raw = iid.includes('_') ? iid.split('_')[1] : iid;
         const cond = normCond(it.fields['Condición']);
-        html += `<div class="pkg-item-line">
-          <span class="pkg-item-id">${raw}</span>
-          <span class="pkg-item-name">${nombre}</span>
-          <span class="pkg-item-cond cond-pill ${cond||'none'}">${condText(cond)}</span>
+        const itemDecKey = getItemDecKey(pid, pkg.key, raw);
+        const itemDec = decisionState[itemDecKey] || { decision:'', obs:'' };
+
+        html += `<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:8px;margin-bottom:8px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.05)">
+            <span class="pkg-item-id" style="width:44px;flex-shrink:0">${raw}</span>
+            <span class="pkg-item-name" style="flex:1;font-size:13px;font-weight:500;color:var(--n100)">${nombre}</span>
+            <span class="cond-pill ${cond||'none'}">${condText(cond)}</span>
+          </div>
+          <div style="padding:10px 12px">
+            <div class="dec-options" style="margin-bottom:8px;flex-wrap:wrap;gap:6px">
+              ${DEC_OPTS.map(opt => {
+                const cls = opt === 'Vender Nuevo' ? 'nuevo' : opt === 'Vender de Segunda' ? 'segunda' : opt === 'Vender Mantenimiento' ? 'mant' : opt === 'No aplica' ? 'na' : '';
+                const sel = itemDec.decision === opt ? 'selected' : '';
+                return `<button class="dec-opt ${cls} ${sel}" onclick="selectDec('${itemDecKey}','${opt}',this)" style="font-size:11px;padding:5px 10px">${opt}</button>`;
+              }).join('')}
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="text" id="obs-${itemDecKey}" placeholder="Observaciones..." value="${(itemDec.obs||'').replace(/"/g,'&quot;')}"
+                style="flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--n100);font-family:var(--font);outline:none">
+              <button class="btn-save-pkg" style="padding:6px 14px;font-size:12px" onclick="saveDec('${itemDecKey}','${pid}','${pkg.key}','${raw}','${nombre.replace(/'/g,"\'")}')">Guardar</button>
+              <span class="save-ok" id="saveok-${itemDecKey}">✓</span>
+            </div>
+          </div>
         </div>`;
       });
       html += `</div>`;
+    } else {
+      html += `<div style="font-size:12px;color:var(--n500);padding:8px 0;font-style:italic">Sin ítems del formulario para mostrar en este paquete.</div>`;
     }
 
-    html += `<div class="decision-form">
-      <div class="dec-form-title">Decisión comercial</div>
-      <div class="dec-options">
-        <button class="dec-opt nuevo ${dec.decision==='Nuevo'?'selected':''}" onclick="selectDec('${pkg.key}','Nuevo',this)">Nuevo</button>
-        <button class="dec-opt segunda ${dec.decision==='Segunda'?'selected':''}" onclick="selectDec('${pkg.key}','Segunda',this)">Segunda</button>
-        <button class="dec-opt mant ${dec.decision==='Mantenimiento'?'selected':''}" onclick="selectDec('${pkg.key}','Mantenimiento',this)">Mantenimiento</button>
-        <button class="dec-opt na ${dec.decision==='No aplica'?'selected':''}" onclick="selectDec('${pkg.key}','No aplica',this)">No aplica</button>
-      </div>
-      <div class="dec-obs">
-        <label>Observaciones</label>
-        <textarea id="obs-${pkg.key}" placeholder="Notas adicionales para este paquete...">${dec.obs}</textarea>
-      </div>
-      <div style="display:flex;align-items:center">
-        <button class="btn-save-pkg" onclick="saveDec('${pkg.key}','${pid}')">Guardar decisión</button>
-        <span class="save-ok" id="saveok-${pkg.key}">✓ Guardado</span>
-      </div>
-    </div>
-    </div></div>`;
+    html += `</div></div>`;
   });
 
   html += '</div>';
@@ -820,7 +844,7 @@ function renderDecisiones(p){
 function getPkgItems(pkg, is21, items){
   let ids = [];
   if(pkg.key === 'PKG1'){
-    ids = is21 ? (pkg.items['2:1'] || []) : (pkg.items['1:1'] || []);
+    ids = is21 ? (pkg.items21 || []) : (pkg.items11 || []);
   } else {
     ids = Array.isArray(pkg.items) ? pkg.items : [];
   }
@@ -831,23 +855,21 @@ function getPkgItems(pkg, is21, items){
   });
 }
 
-function selectDec(pkgKey, value, btn){
-  // Update UI
+function selectDec(itemDecKey, value, btn){
   const opts = btn.closest('.dec-options').querySelectorAll('.dec-opt');
   opts.forEach(b => b.classList.remove('selected'));
   btn.classList.add('selected');
-  // Update state
-  if(!decisionState[pkgKey]) decisionState[pkgKey] = { decision:'', obs:'', airtableId:null };
-  decisionState[pkgKey].decision = value;
+  if(!decisionState[itemDecKey]) decisionState[itemDecKey] = { decision:'', obs:'', airtableId:null };
+  decisionState[itemDecKey].decision = value;
 }
 
-async function saveDec(pkgKey, pid){
-  const decision = decisionState[pkgKey]?.decision || '';
-  const obs = document.getElementById(`obs-${pkgKey}`)?.value || '';
-  const existing = decisionState[pkgKey]?.airtableId;
+async function saveDec(itemDecKey, pid, pkgKey, itemId, itemName){
+  const decision = decisionState[itemDecKey]?.decision || '';
+  const obs = document.getElementById(`obs-${itemDecKey}`)?.value || '';
+  const existing = decisionState[itemDecKey]?.airtableId;
 
   const fields = {
-    'ID decisión': `${pid.slice(-6)}_${pkgKey}`,
+    'ID decisión': itemDecKey,
     'Paquete': pkgKey,
     'Decisión': decision,
     'Observaciones': obs,
@@ -861,14 +883,14 @@ async function saveDec(pkgKey, pid){
     } else {
       const res = await AT_POST(TBL_DECISIONES, { fields });
       if(res.id){
-        if(!decisionState[pkgKey]) decisionState[pkgKey] = {};
-        decisionState[pkgKey].airtableId = res.id;
+        if(!decisionState[itemDecKey]) decisionState[itemDecKey] = {};
+        decisionState[itemDecKey].airtableId = res.id;
         allDecisiones.push(res);
       }
     }
-    decisionState[pkgKey].obs = obs;
-    const ok = document.getElementById(`saveok-${pkgKey}`);
-    if(ok){ ok.classList.add('show'); setTimeout(()=>ok.classList.remove('show'),2000); }
+    decisionState[itemDecKey].obs = obs;
+    const okEl = document.getElementById(`saveok-${itemDecKey}`);
+    if(okEl){ okEl.classList.add('show'); setTimeout(()=>okEl.classList.remove('show'),2000); }
     toast('Decisión guardada ✓');
   } catch(e){
     console.error(e);
@@ -894,7 +916,7 @@ function togSection(id){
   const el = document.getElementById(id);
   const chev = document.getElementById('chev-'+id);
   if(!el) return;
-  const open = el.style.display !== 'none' && el.style.display !== '';
+  const open = el.style.display === 'flex';
   el.style.display = open ? 'none' : 'flex';
   if(chev) chev.classList.toggle('open', !open);
 }
