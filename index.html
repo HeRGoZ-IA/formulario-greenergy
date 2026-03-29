@@ -644,11 +644,14 @@ function renderItem(it){
   let phtml='<div class="ph-grid">';
   it.photos.forEach((ph,pi)=>{
     const shot=st.photos[pi];
+    const displayThumb=st.photoDisplay?.[pi] || st.photoThumbs?.[pi];
     phtml+=`<div class="ph-slot">
-      <div class="ph-box ${shot?'shot':''}" onclick="trigPh('${it.id}',${pi})">
-        ${shot
-          ?`<div class="ph-ico">✓</div><div class="ph-lbl">Cargada</div>`
-          :`<div class="ph-ico">⊞</div><div class="ph-lbl">Tomar</div>`}
+      <div class="ph-box ${shot?'shot':''}" id="phbox-${it.id}-${pi}" onclick="trigPh('${it.id}',${pi})">
+        ${shot && displayThumb
+          ?`<img src="${displayThumb}" alt="foto"><div class="ph-del" onclick="event.stopPropagation();delPh('${it.id}',${pi})">✕</div>`
+          :shot
+            ?`<div class="ph-ico">✓</div><div class="ph-lbl">Cargada</div>`
+            :`<div class="ph-ico">⊞</div><div class="ph-lbl">Tomar</div>`}
       </div>
       <div class="ph-name">${ph}</div>
     </div>
@@ -947,19 +950,28 @@ function capPh(id,pi,inp){
     // Create thumbnail via canvas — max 120x90px
     const img=new Image();
     img.onload=()=>{
+      // Full-res version (max 1200x900) for sending to Airtable
       const canvas=document.createElement('canvas');
-      const maxW=120,maxH=90;
+      const maxW=1200,maxH=900;
       let w=img.width,h=img.height;
       if(w>maxW){h=Math.round(h*maxW/w);w=maxW;}
       if(h>maxH){w=Math.round(w*maxH/h);h=maxH;}
       canvas.width=w;canvas.height=h;
       canvas.getContext('2d').drawImage(img,0,0,w,h);
-      const thumb=canvas.toDataURL('image/jpeg',0.7);
-      state[id].photoThumbs[pi]=thumb;
+      const fullThumb=canvas.toDataURL('image/jpeg',0.82);
+      // Small display thumbnail (max 156px wide) for UI
+      const dCanvas=document.createElement('canvas');
+      const dW=Math.min(w,156),dH=Math.round(h*(dW/w));
+      dCanvas.width=dW;dCanvas.height=dH;
+      dCanvas.getContext('2d').drawImage(img,0,0,dW,dH);
+      const displayThumb=dCanvas.toDataURL('image/jpeg',0.7);
+      state[id].photoThumbs[pi]=fullThumb;
+      if(!state[id].photoDisplay) state[id].photoDisplay={};
+      state[id].photoDisplay[pi]=displayThumb;
       const box=document.getElementById(`phbox-${id}-${pi}`);
       if(box){
         box.classList.add('shot');
-        box.innerHTML=`<img src="${thumb}" alt="foto"><div class="ph-del" onclick="event.stopPropagation();delPh('${id}',${pi})">✕</div>`;
+        box.innerHTML=`<img src="${displayThumb}" alt="foto"><div class="ph-del" onclick="event.stopPropagation();delPh('${id}',${pi})">✕</div>`;
       }
       updateChip(id);
       updateProg();
@@ -975,6 +987,7 @@ function delPh(id,pi){
   if(!state[id]) return;
   delete state[id].photos[pi];
   if(state[id].photoThumbs) delete state[id].photoThumbs[pi];
+  if(state[id].photoDisplay) delete state[id].photoDisplay[pi];
   const box=document.getElementById(`phbox-${id}-${pi}`);
   if(box){
     box.classList.remove('shot');
@@ -1087,6 +1100,12 @@ function buildPayload(){
   const itemsArr = allItems.map(it => {
     const st = state[it.id] || {cond:null,fields:{},photos:{}};
     const photosDone = Object.values(st.photos).filter(Boolean).length;
+    const photosArr = it.photos.map((label, pi) => ({
+      index: pi,
+      label: label,
+      filename: st.photos[pi] || null,
+      data: (st.photoThumbs && st.photoThumbs[pi]) ? st.photoThumbs[pi] : null
+    })).filter(p => p.filename);
     return {
       id: it.id,
       name: it.name,
@@ -1099,7 +1118,8 @@ function buildPayload(){
       cond: st.cond || '',
       fields: st.fields || {},
       photosTotal: it.photos.length,
-      photosDone: photosDone
+      photosDone: photosDone,
+      photos: photosArr
     };
   });
 
