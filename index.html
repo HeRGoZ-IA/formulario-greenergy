@@ -1191,7 +1191,7 @@ function collectPhotos(){
     it.photos.forEach((label, pi) => {
       if(st.photos[pi] && st.photoThumbs && st.photoThumbs[pi]){
         fotos.push({
-          itemId: it.id,
+          itemId: `${gdata.codigo}_${it.id}`,
           fotoId: `${gdata.codigo}_${it.id}-${pi}`,
           label: label,
           zona: zona,
