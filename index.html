@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Estado Inicial · Greenergy</title>
+<title>Estado Inicial · Greenergy v5</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -280,7 +280,7 @@ body{font-family:var(--font);background:var(--n50);color:var(--n900);font-size:1
 
 <div class="btm">
   <div class="btm-prog"><div class="btm-fill" id="btm-fill" style="width:0%"></div></div>
-  <div class="btm-lbl" id="btm-lbl">0 / 64 ítems</div>
+  <div class="btm-lbl" id="btm-lbl">0 / 70 ítems</div>
 </div>
 
 <div class="saved-pill" id="saved-pill">Guardado ✓</div>
@@ -290,9 +290,9 @@ body{font-family:var(--font);background:var(--n50);color:var(--n900);font-size:1
 // ─── DATA ──────────────────────────────────────────────────────────────────
 const SECS=[
   {id:'gen', label:'General'},
-  {id:'cm',  label:'Cuarto de máquinas', icon:'⚙️', color:'#0f5526', items:12, photos:26},
-  {id:'tc',  label:'Techo de cabina',    icon:'🔧', color:'#1a7040', items:11, photos:18},
-  {id:'rec', label:'Recorrido / hueco',  icon:'↕️', color:'#2d6a1e', items:10, photos:19},
+  {id:'cm',  label:'Cuarto de máquinas', icon:'⚙️', color:'#0f5526', items:14, photos:30},
+  {id:'tc',  label:'Techo de cabina',    icon:'🔧', color:'#1a7040', items:13, photos:21},
+  {id:'rec', label:'Recorrido / hueco',  icon:'↕️', color:'#2d6a1e', items:12, photos:22},
   {id:'fos', label:'Foso',               icon:'⬇️', color:'#3d5c10', items:11, photos:15},
   {id:'cab', label:'Cabina',             icon:'🚪', color:'#0d4f6e', items:12, photos:19},
   {id:'pu',  label:'Puertas de hall',    icon:'🚪', color:'#3d3d3a', items: 8, photos:12},
@@ -318,7 +318,8 @@ const ITEMS={
      fields:[['Marca','Modelo'],['Velocidad de disparo (m/s)','Estado del cable']]},
     {id:'cm06',name:'Caja de breakers / totalizador',ntc:'',
      photos:['Vista frontal','Identificación de circuitos'],
-     fields:[['Voltaje entrada','Capacidad totalizador (A)'],['N.° de breakers','Estado general']]},
+     fields:[['Voltaje entrada','Capacidad totalizador (A)'],['N.° de breakers','Estado general'],['¿120 V (Fase/Neutro) independiente?','Puesta a tierra']],
+     selects:{'¿120 V (Fase/Neutro) independiente?':['—','Sí','No'],'Puesta a tierra':['—','Sí','No','Parcial']}},
     {id:'cm07',name:'Transformador de seguridades',ntc:'',
      photos:['Vista completa','Placa de datos'],
      fields:[['Voltaje entrada / salida','Potencia (VA)'],['Estado','']]},
@@ -337,7 +338,13 @@ const ITEMS={
      fields:[['¿Placa de capacidad?','¿Señal de peligro?'],['Estado','']]},
     {id:'cm12',name:'Acceso y condiciones del cuarto',ntc:'NTC §6.3.1',
      photos:['Vista general','Puerta de acceso'],
-     fields:[['¿Llave exclusiva?','Estado del piso'],['Estado del techo','Ventilación']]}
+     fields:[['¿Llave exclusiva?','Estado del piso'],['Estado del techo','Ventilación']]},
+    {id:'cm13',name:'Terminales de cables de tracción (C. Máquinas)',ntc:'NTC §9.1',
+     photos:['Terminal CM'],
+     fields:[['Tipo de terminal','Diámetro cable (mm)'],['Estado','']]},
+    {id:'cm14',name:'Polea de desvío (C. Máquinas)',ntc:'NTC §9.1',
+     photos:['Vista completa','Detalle canales'],
+     fields:[['Diámetro (mm)','N.° de canales'],['Estado','']]}
   ],
   tc:[
     {id:'tc01',name:'Caja de inspección (botonera techo)',ntc:'',
@@ -372,7 +379,13 @@ const ITEMS={
      fields:[['Tipo','Estado'],['Calibración','']]},
     {id:'tc11',name:'Switch de garras (paracaídas)',ntc:'NTC §9.8',
      photos:['Vista completa'],
-     fields:[['Tipo','Estado del switch'],['Accionamiento correcto','']]}
+     fields:[['Tipo','Estado del switch'],['Accionamiento correcto','']]},
+    {id:'tc12',name:'Terminales de cables de tracción (T. Cabina)',ntc:'NTC §9.1',
+     photos:['Terminal TC'],
+     fields:[['Tipo de terminal','Diámetro cable (mm)'],['Estado','']]},
+    {id:'tc13',name:'Polea de desvío (T. Cabina)',ntc:'NTC §9.1',
+     photos:['Vista completa','Detalle canales'],
+     fields:[['Diámetro (mm)','N.° de canales'],['Estado','']]}
   ],
   rec:[
     {id:'re01',name:'Guías de cabina',ntc:'NTC §10',
@@ -404,7 +417,13 @@ const ITEMS={
      fields:[['Material','Altura (mm)'],['Estado','']]},
     {id:'re10',name:'Faldones de cabina y pasillo',ntc:'NTC §5.5',
      photos:['Faldón cabina','Faldones pasillo'],
-     fields:[['Material','Longitud (mm)'],['Estado','']]}
+     fields:[['Material','Longitud (mm)'],['Estado','']]},
+    {id:'re11',name:'Terminales de cables de tracción (Contrapeso)',ntc:'NTC §9.1',
+     photos:['Terminal CP'],
+     fields:[['Tipo de terminal','Diámetro cable (mm)'],['Estado','']]},
+    {id:'re12',name:'Polea de desvío (Contrapeso)',ntc:'NTC §9.1',
+     photos:['Vista completa','Detalle canales'],
+     fields:[['Diámetro (mm)','N.° de canales'],['Estado','']]}
   ],
   fos:[
     {id:'fo01',name:'Límites y desaceleradores inferiores',ntc:'NTC §9.7',
@@ -515,7 +534,7 @@ const URL_PARAMS=new URLSearchParams(window.location.search);
 const URL_CODE=URL_PARAMS.get('proyecto')||'';
 const SK=URL_CODE?'grn_ei_'+URL_CODE:'grn_ei_new';
 let cfg={dbl:false,disc:false};
-let gdata={cliente:'',dir:'',torre:'',ascensor:'',fecha:new Date().toISOString().split('T')[0],tecnico:'',codigo:URL_CODE,marca:'',paradas:'',cap:'',vel:'',traccion:'Gearless',tension:'380 V',puertas:'Automáticas'};
+let gdata={cliente:'',dir:'',torre:'',ascensor:'',fecha:new Date().toISOString().split('T')[0],tecnico:'',codigo:URL_CODE,marca:'',paradas:'',cap:'',vel:'',traccion:'Gearless 1:1',tension:'380 V',puertas:'Automáticas'};
 let state={};
 let curSec=0;
 let online=navigator.onLine;
@@ -626,14 +645,24 @@ function renderItem(it){
       const al=it.alerts?.find(a=>a.f===f);
       const alOn=al&&al.check(v);
       const alId=`al-${it.id}-${f.replace(/\s/g,'_')}`;
-      fhtml+=`<div class="f ${fi===0&&pair.length===1?'wide':''}">
-        <label>${f}</label>
-        <input type="text" placeholder="—" value="${v.replace(/"/g,'&quot;')}"
-          oninput="sf('${it.id}','${f}',this.value)"
-          ${al?`onblur="chkAl('${it.id}','${f}',this.value,'${alId}')"`:''}
-        >
-        ${al?`<div class="f-alert ${alOn?'on':''}" id="${alId}">${al.msg}</div>`:''}
-      </div>`;
+      const selOpts=it.selects?.[f];
+      if(selOpts){
+        fhtml+=`<div class="f ${fi===0&&pair.length===1?'wide':''}">
+          <label>${f}</label>
+          <select onchange="sf('${it.id}','${f}',this.value)">
+            ${selOpts.map(o=>`<option${o===v?' selected':''}>${o}</option>`).join('')}
+          </select>
+        </div>`;
+      } else {
+        fhtml+=`<div class="f ${fi===0&&pair.length===1?'wide':''}">
+          <label>${f}</label>
+          <input type="text" placeholder="—" value="${v.replace(/"/g,'&quot;')}"
+            oninput="sf('${it.id}','${f}',this.value)"
+            ${al?`onblur="chkAl('${it.id}','${f}',this.value,'${alId}')"`:''}
+          >
+          ${al?`<div class="f-alert ${alOn?'on':''}" id="${alId}">${al.msg}</div>`:''}
+        </div>`;
+      }
     });
   });
   fhtml+=`<div class="f wide"><label>Observaciones</label>
@@ -731,8 +760,10 @@ function renderGen(){
         <div class="g-f"><label>Velocidad nominal (m/s)</label><input id="g-vel" type="text" placeholder="—" oninput="sg('vel',this.value)"></div>
         <div class="g-f"><label>Tipo de tracción</label>
           <select id="g-tra" onchange="sg('traccion',this.value)">
-            <option>Gearless (sin engranajes)</option>
-            <option>Geared (con engranajes)</option>
+            <option>Gearless 1:1</option>
+            <option>Gearless 2:1</option>
+            <option>Con reductor 1:1</option>
+            <option>Con reductor 2:1</option>
             <option>Hidráulico</option>
           </select>
         </div>
@@ -809,7 +840,7 @@ function restoreGen(){
     codEl.style.fontWeight='600';
   }
   const tra=document.getElementById('g-tra');
-  if(tra) tra.value=gdata.traccion||'Gearless (sin engranajes)';
+  if(tra) tra.value=gdata.traccion||'Gearless 1:1';
   const ten=document.getElementById('g-ten');
   if(ten) ten.value=gdata.tension||'380 V';
   const pue=document.getElementById('g-pue');
