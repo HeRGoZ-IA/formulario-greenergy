@@ -612,6 +612,10 @@ function renderInforme(p){
       const itemId = i.fields['ID ítem'] || '';
       const raw = itemId.includes('_') ? itemId.split('_')[1] : itemId;
       return raw.startsWith(sec.key);
+    }).sort((a,b) => {
+      const ra = (a.fields['ID ítem']||'').split('_').pop();
+      const rb = (b.fields['ID ítem']||'').split('_').pop();
+      return ra.localeCompare(rb, undefined, {numeric:true});
     });
     if(!secItems.length) return;
 
@@ -757,18 +761,18 @@ function renderDecisiones(p){
   PAQUETES.forEach(pkg => {
     const pkgItems = getPkgItems(pkg, is21, items);
 
-    // Count decisions made for this package
-    const decCount = pkgItems.filter(it => {
-      const iid = it.fields['ID ítem'] || '';
-      const raw = iid.includes('_') ? iid.split('_')[1] : iid;
-      const key = getItemDecKey(pid, pkg.key, raw);
-      return decisionState[key]?.decision && decisionState[key].decision !== 'Pendiente por definir';
-    }).length;
     const critCount = pkgItems.filter(i => {
       const c = normCond(i.fields['Condición']);
       return c === 'bad' || c === 'absent';
     }).length;
     const totalItems = pkgItems.length;
+    const decCount = pkgItems.filter(it => {
+      const iid = it.fields['ID ítem'] || '';
+      const raw = iid.includes('_') ? iid.split('_')[1] : iid;
+      const key = getItemDecKey(pid, pkg.key, raw);
+      const d = decisionState[key]?.decision || '';
+      return d && d !== 'Pendiente por definir';
+    }).length;
     const pkgStatusLbl = totalItems === 0 ? 'Sin ítems' : decCount === totalItems ? 'Completo' : decCount > 0 ? `${decCount}/${totalItems}` : 'Sin definir';
     const pkgStatusCls = totalItems === 0 ? 'sin' : decCount === totalItems ? 'mant' : decCount > 0 ? 'segunda' : 'sin';
 
@@ -852,50 +856,96 @@ function getPkgItems(pkg, is21, items){
     const iid = i.fields['ID ítem'] || '';
     const raw = iid.includes('_') ? iid.split('_')[1] : iid;
     return ids.includes(raw);
+  }).sort((a,b) => {
+    const ra = (a.fields['ID ítem']||'').split('_').pop();
+    const rb = (b.fields['ID ítem']||'').split('_').pop();
+    return ra.localeCompare(rb, undefined, {numeric:true});
   });
 }
 
-function selectDec(itemDecKey, value, btn){
-  const opts = btn.closest('.dec-options').querySelectorAll('.dec-opt');
-  opts.forEach(b => b.classList.remove('selected'));
-  btn.classList.add('selected');
-  if(!decisionState[itemDecKey]) decisionState[itemDecKey] = { decision:'', obs:'', airtableId:null };
-  decisionState[itemDecKey].decision = value;
+function togItemDrop(dropId){
+  const el = document.getElementById(dropId);
+  if(!el) return;
+  const isOpen = el.style.display !== 'none';
+  document.querySelectorAll('[id^="drop-"]').forEach(d => { d.style.display='none'; });
+  if(!isOpen) el.style.display = 'block';
 }
 
-async function saveDec(itemDecKey, pid, pkgKey, itemId, itemName){
-  const decision = decisionState[itemDecKey]?.decision || '';
-  const obs = document.getElementById(`obs-${itemDecKey}`)?.value || '';
-  const existing = decisionState[itemDecKey]?.airtableId;
-
-  const fields = {
-    'ID decisión': itemDecKey,
-    'Paquete': pkgKey,
-    'Decisión': decision,
-    'Observaciones': obs,
-    'Proyecto': [pid],
-    'Fecha decisión': new Date().toISOString().split('T')[0],
-  };
-
-  try {
-    if(existing){
-      await AT_PATCH(TBL_DECISIONES, existing, fields);
-    } else {
-      const res = await AT_POST(TBL_DECISIONES, { fields });
-      if(res.id){
-        if(!decisionState[itemDecKey]) decisionState[itemDecKey] = {};
-        decisionState[itemDecKey].airtableId = res.id;
-        allDecisiones.push(res);
-      }
+function selectItemDec(itemDecKey, value, btn, dropId){
+  // Update state
+  if(!decisionState[itemDecKey]) decisionState[itemDecKey] = { decision:'', obs:'', airtableId:null };
+  decisionState[itemDecKey].decision = value;
+  // Update dropdown selected state
+  btn.closest('[id^="drop-"]').querySelectorAll('.dec-opt').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  // Update the row badge
+  const row = btn.closest('[style*="border-bottom"]');
+  if(row){
+    const badgeWrap = row.querySelector('[style*="display:flex"]');
+    if(badgeWrap){
+      const clsMap = {'Vender Nuevo':'nuevo','Vender de Segunda':'segunda','Vender Mantenimiento':'mant','No aplica':'na'};
+      const cls = clsMap[value] || '';
+      // Remove old badge/dash
+      const oldBadge = badgeWrap.querySelector('.pkg-dec-status, [style*="color:var(--n600)"]');
+      if(oldBadge) oldBadge.remove();
+      const badge = document.createElement('span');
+      badge.className = `pkg-dec-status ${cls}`;
+      badge.style.cssText = 'font-size:10px;padding:2px 8px';
+      badge.textContent = value;
+      badgeWrap.insertBefore(badge, badgeWrap.lastElementChild);
     }
-    decisionState[itemDecKey].obs = obs;
-    const okEl = document.getElementById(`saveok-${itemDecKey}`);
-    if(okEl){ okEl.classList.add('show'); setTimeout(()=>okEl.classList.remove('show'),2000); }
-    toast('Decisión guardada ✓');
-  } catch(e){
-    console.error(e);
-    toast('Error al guardar — intenta de nuevo');
   }
+  // Close dropdown
+  document.getElementById(dropId).style.display = 'none';
+  // Update pkg header progress
+  updatePkgProgress(itemDecKey);
+}
+
+function updatePkgProgress(itemDecKey){
+  // Re-count decisions for this package from DOM
+  const pkgKey = itemDecKey.split('_')[1];
+  const statusEl = document.getElementById(`pkgchev-${pkgKey}`)?.previousElementSibling;
+  if(!statusEl) return;
+  const total = Object.keys(decisionState).filter(k => k.includes(`_${pkgKey}_`)).length;
+  const done = Object.entries(decisionState).filter(([k,v]) => k.includes(`_${pkgKey}_`) && v.decision && v.decision !== 'Pendiente por definir').length;
+  if(total === 0) return;
+  statusEl.textContent = done === total ? 'Completo' : done > 0 ? `${done}/${total}` : 'Sin definir';
+  statusEl.className = `pkg-dec-status ${done === total ? 'mant' : done > 0 ? 'segunda' : 'sin'}`;
+}
+
+async function savePkg(pkgKey, pid){
+  const obs = document.getElementById(`pkgobs-${pkgKey}`)?.value || '';
+  const pkgItems = Object.entries(decisionState).filter(([k]) => k.includes(`_${pkgKey}_`));
+  if(!pkgItems.length){ toast('Sin ítems que guardar'); return; }
+
+  let saved = 0;
+  for(const [key, state] of pkgItems){
+    const raw = key.split('_').pop();
+    const fields = {
+      'ID decisión': key,
+      'Paquete': pkgKey,
+      'Decisión': state.decision || 'Pendiente por definir',
+      'Observaciones': obs,
+      'Proyecto': [pid],
+      'Fecha decisión': new Date().toISOString().split('T')[0],
+    };
+    try {
+      if(state.airtableId){
+        await AT_PATCH(TBL_DECISIONES, state.airtableId, fields);
+      } else {
+        const res = await AT_POST(TBL_DECISIONES, { fields });
+        if(res.id){
+          decisionState[key].airtableId = res.id;
+          allDecisiones.push(res);
+        }
+      }
+      decisionState[key].obs = obs;
+      saved++;
+    } catch(e){ console.error(e); }
+  }
+  const okEl = document.getElementById(`saveok-${pkgKey}`);
+  if(okEl){ okEl.classList.add('show'); setTimeout(()=>okEl.classList.remove('show'),2500); }
+  toast(`${saved} decisión(es) guardada(s) ✓`);
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
