@@ -1093,19 +1093,14 @@ function initSign(){
 function clrSign(){if(sCtx){const c=document.getElementById('sign-c');sCtx.clearRect(0,0,c.width,c.height);}}
 
 // ─── SUBMIT ──────────────────────────────────────────────────────────────────
-const WEBHOOK_URL = 'https://n8n-service-0os1.onrender.com/webhook/greenergy-estado-inicial';
+const WEBHOOK_URL       = 'https://n8n-service-0os1.onrender.com/webhook/greenergy-estado-inicial';
+const WEBHOOK_FOTOS_URL = 'https://n8n-service-0os1.onrender.com/webhook/greenergy-foto';
 
 function buildPayload(){
   const allItems = Object.values(ITEMS).flat().filter(it => !it.onlyIf || cfg[it.onlyIf]);
   const itemsArr = allItems.map(it => {
     const st = state[it.id] || {cond:null,fields:{},photos:{}};
     const photosDone = Object.values(st.photos).filter(Boolean).length;
-    const photosArr = it.photos.map((label, pi) => ({
-      index: pi,
-      label: label,
-      filename: st.photos[pi] || null,
-      data: (st.photoThumbs && st.photoThumbs[pi]) ? st.photoThumbs[pi] : null
-    })).filter(p => p.filename);
     return {
       id: it.id,
       name: it.name,
@@ -1118,8 +1113,7 @@ function buildPayload(){
       cond: st.cond || '',
       fields: st.fields || {},
       photosTotal: it.photos.length,
-      photosDone: photosDone,
-      photos: photosArr
+      photosDone: photosDone
     };
   });
 
@@ -1151,9 +1145,75 @@ function buildPayload(){
   };
 }
 
+// Recolecta todas las fotos tomadas con sus metadatos
+function collectPhotos(){
+  const allItems = Object.values(ITEMS).flat().filter(it => !it.onlyIf || cfg[it.onlyIf]);
+  const fotos = [];
+  allItems.forEach(it => {
+    const st = state[it.id];
+    if(!st || !st.photos) return;
+    const zona = (() => {
+      const z = it.id.substring(0,2);
+      const map = {cm:'Cuarto de máquinas',tc:'Techo de cabina',re:'Recorrido',fo:'Foso',ca:'Cabina',pu:'Puertas de hall'};
+      return map[z] || '';
+    })();
+    it.photos.forEach((label, pi) => {
+      if(st.photos[pi] && st.photoThumbs && st.photoThumbs[pi]){
+        fotos.push({
+          itemId: it.id,
+          fotoId: `${it.id}-${pi}`,
+          label: label,
+          zona: zona,
+          data: st.photoThumbs[pi]
+        });
+      }
+    });
+  });
+  return fotos;
+}
+
+// Sube fotos una por una al webhook de fotos
+async function uploadPhotos(proyectoAirtableId, itemsMap){
+  const fotos = collectPhotos();
+  if(fotos.length === 0) return;
+
+  let uploaded = 0;
+  const total = fotos.length;
+  const btn = document.getElementById('sub-btn');
+
+  for(const foto of fotos){
+    const itemAirtableId = itemsMap[foto.itemId] || null;
+    try {
+      await fetch(WEBHOOK_FOTOS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fotoId: foto.fotoId,
+          proyectoAirtableId: proyectoAirtableId,
+          itemAirtableId: itemAirtableId,
+          label: foto.label,
+          zona: foto.zona,
+          data: foto.data
+        })
+      });
+      uploaded++;
+      if(btn) btn.textContent = `Subiendo fotos... ${uploaded}/${total}`;
+    } catch(e){
+      console.warn('Error subiendo foto', foto.fotoId, e);
+    }
+  }
+  if(btn){
+    btn.textContent = `✓ Enviado — ${uploaded}/${total} fotos subidas`;
+    btn.style.background = 'var(--g400)';
+    btn.style.color = 'var(--g900)';
+    btn.disabled = false;
+  }
+  toast(`${uploaded} foto(s) subida(s) a Airtable ✓`);
+}
+
 async function submit(){
   const btn = document.getElementById('sub-btn');
-  if(btn){ btn.disabled=true; btn.textContent='Enviando...'; }
+  if(btn){ btn.disabled=true; btn.textContent='Enviando datos...'; }
 
   const payload = buildPayload();
 
@@ -1171,11 +1231,30 @@ async function submit(){
       body: JSON.stringify(payload)
     });
     if(res.ok){
-      toast('Registro enviado a Airtable ✓');
-      if(btn){ btn.textContent='✓ Enviado — toca para reenviar'; btn.style.background='var(--g400)'; btn.style.color='var(--g900)'; btn.disabled=false; delete btn.dataset.confirmed; }
+      let proyectoAirtableId = null;
+      let itemsMap = {};
+      try {
+        const resData = await res.json();
+        proyectoAirtableId = resData.proyectoAirtableId || null;
+        // itemsMap: { "cm01": "recXXXX", "cm02": "recYYYY", ... }
+        if(Array.isArray(resData.items)){
+          resData.items.forEach(i => { if(i.itemId && i.airtableId) itemsMap[i.itemId] = i.airtableId; });
+        }
+      } catch(e){ console.warn('No se pudo parsear respuesta del webhook', e); }
+
       localStorage.setItem('grn_sent_'+URL_CODE, new Date().toISOString());
       localStorage.removeItem('grn_pending_payload');
       save();
+      toast('Datos enviados ✓ — subiendo fotos...');
+      if(btn) btn.textContent = 'Subiendo fotos...';
+
+      // Subir fotos en segundo plano
+      if(proyectoAirtableId){
+        await uploadPhotos(proyectoAirtableId, itemsMap);
+      } else {
+        if(btn){ btn.textContent='✓ Enviado — toca para reenviar'; btn.style.background='var(--g400)'; btn.style.color='var(--g900)'; btn.disabled=false; }
+        toast('Registro enviado a Airtable ✓');
+      }
     } else {
       throw new Error('Error ' + res.status);
     }
