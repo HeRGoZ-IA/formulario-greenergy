@@ -950,15 +950,15 @@ function capPh(id,pi,inp){
     // Create thumbnail via canvas — max 120x90px
     const img=new Image();
     img.onload=()=>{
-      // Full-res version (max 1200x900) for sending to Airtable
+      // Full-res version (max 800x600) for sending to Google Drive
       const canvas=document.createElement('canvas');
-      const maxW=1200,maxH=900;
+      const maxW=800,maxH=600;
       let w=img.width,h=img.height;
       if(w>maxW){h=Math.round(h*maxW/w);w=maxW;}
       if(h>maxH){w=Math.round(w*maxH/h);h=maxH;}
       canvas.width=w;canvas.height=h;
       canvas.getContext('2d').drawImage(img,0,0,w,h);
-      const fullThumb=canvas.toDataURL('image/jpeg',0.82);
+      const fullThumb=canvas.toDataURL('image/jpeg',0.75);
       // Small display thumbnail (max 156px wide) for UI
       const dCanvas=document.createElement('canvas');
       const dW=Math.min(w,156),dH=Math.round(h*(dW/w));
