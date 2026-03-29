@@ -332,6 +332,7 @@ let allFotos     = [];
 let allDecisiones= [];
 let curProyecto  = null;
 let decisionState= {}; // { pkgKey: { decision, obs, airtableId } }
+let needsTierraGlobal = false;
 
 // ─── SECTIONS ─────────────────────────────────────────────────────────────────
 const SECCIONES = [
@@ -458,7 +459,7 @@ function renderList(){
       totalFotosPend += Math.max(0, req - done);
     });
     const decs = allDecisiones.filter(d => {
-      const pLink = d.fields['Proyecto'];
+      const pLink = d.fields['Proyectos'];
       return Array.isArray(pLink) && pLink.includes(pid);
     });
     if(!decs.length) totalPending++;
@@ -496,7 +497,7 @@ function renderProjCard(p){
   const pct = total ? Math.round(done/total*100) : 0;
 
   const decs = allDecisiones.filter(d => {
-    const pLink = d.fields['Proyecto'];
+    const pLink = d.fields['Proyectos'];
     return Array.isArray(pLink) && pLink.includes(pid);
   });
   const decStatus = !decs.length ? 'pendiente' : decs.length < PAQUETES.length ? 'en-proceso' : 'completo';
@@ -733,7 +734,7 @@ function renderDecisiones(p){
   // Build decisionState from existing records (keyed by ID decisión)
   decisionState = {};
   allDecisiones.filter(d => {
-    const pLink = d.fields['Proyecto'];
+    const pLink = d.fields['Proyectos'];
     return Array.isArray(pLink) && pLink.includes(pid);
   }).forEach(d => {
     const key = d.fields['ID decisión'] || '';
@@ -753,6 +754,7 @@ function renderDecisiones(p){
   const campos06 = cm06 ? parseCampos(cm06.fields['Campos técnicos']) : {};
   const tierra = (campos06['Puesta a tierra'] || '').toLowerCase();
   const needsTierra = tierra === 'no' || tierra === 'parcial';
+  needsTierraGlobal = needsTierra;
 
   let html = '<div class="decisiones-wrap">';
 
@@ -947,8 +949,9 @@ async function savePkg(pkgKey, pid){
       'Paquete': pkgKey,
       'Decisión': st.decision || 'Pendiente por definir',
       'Observaciones': obs,
-      'Proyecto': [pid],
+      'Proyectos': [pid],
       'Fecha decisión': new Date().toISOString().split('T')[0],
+      'Requiere estudio tierra': needsTierraGlobal,
     };
     try {
       if(st.airtableId){
