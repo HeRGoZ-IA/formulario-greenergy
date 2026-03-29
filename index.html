@@ -1133,7 +1133,7 @@ function buildPayload(){
     const st = state[it.id] || {cond:null,fields:{},photos:{}};
     const photosDone = Object.values(st.photos).filter(Boolean).length;
     return {
-      id: it.id,
+      id: `${gdata.codigo}_${it.id}`,
       name: it.name,
       ntc: it.ntc || '',
       zona: (() => {
@@ -1192,7 +1192,7 @@ function collectPhotos(){
       if(st.photos[pi] && st.photoThumbs && st.photoThumbs[pi]){
         fotos.push({
           itemId: it.id,
-          fotoId: `${it.id}-${pi}`,
+          fotoId: `${gdata.codigo}_${it.id}-${pi}`,
           label: label,
           zona: zona,
           data: st.photoThumbs[pi]
