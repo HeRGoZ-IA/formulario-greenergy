@@ -388,7 +388,7 @@ const PAQUETES = [
     items:['re01','re02','re03','re04','re05'] },
   { key:'PKG7', label:'Paquete 7 — Ítems independientes', color:'#334155',
     desc:'Ítems que se cotizan de forma independiente según estado registrado en el formulario.',
-    items:['cm06','cm07','cm09','cm10','cm11','cm12','tc07','tc08','tc09','tc10','fo01','fo02','fo07','fo08','fo09','fo10','fo11','re06','re07','re09','re10'] },
+    items:['cm06','cm07','cm09','cm10','cm11','cm12','tc07','tc08','tc09','tc10','fo01','fo02','fo07','fo08','fo09','fo10','fo11','re07','re09','re10'] },
 ];
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
@@ -943,6 +943,8 @@ async function savePkg(pkgKey, pid){
   const obs = document.getElementById(`pkgobs-${pkgKey}`)?.value || '';
   // Get all entries for this package from decisionState
   const pkgEntries = Object.entries(decisionState).filter(([k]) => {
+    // ID format: {pid6chars}_{PKGx}_{itemId}
+    // pid6chars never contains underscore, PKGx never contains underscore
     const parts = k.split('_');
     return parts.length >= 3 && parts[1] === pkgKey;
   });
