@@ -1155,76 +1155,76 @@ function renderCotizacion(p){
 
 // ─── CRONOGRAMA ───────────────────────────────────────────────────────────────
 const TAREAS_DB = {
-  cm01:{hn:[32,56],hm:[4,8],t:['Preparación: andamio en C. Máq., polipasto certificado (min. 2× peso máquina), LOTO','Inmovilización de cabina y contrapeso con eslingas certificadas','Desmontaje de terminales y bajada de cables uno a uno','Desconexión eléctrica total con etiquetado de bornes','Desmontaje de máquina vieja del soporte (150–400 kg — proceso crítico)','Verificación y preparación de bancada; adaptadores si requiere','Izaje y posicionamiento de máquina nueva — alineación con plomada al hueco','Montaje de polea de tracción nueva (siempre nueva con máquina)','Instalación de cables nuevos uno a uno con sistema de arrastre por cordel','Confección de terminales (prensado hidráulico) — uno por cable, verificación de carga','Conexión eléctrica al NICE 3000, parametrización del variador, ajuste de freno','Prueba sin carga → con carga nominal → ajuste fino de nivelación'],note:'5–7 días reales con 2 técnicos. Cables y polea siempre nuevos.'},
-  cm02:{hn:[24,40],hm:[3,6],t:['Inmovilización idéntica a cm01','Bajada y extracción de todos los cables viejos uno a uno','Desmontaje de polea vieja del eje (requiere extractor de poleas)','Montaje de polea nueva — verificación de alineación de canales','Instalación de cables nuevos uno a uno','Confección de terminales en ambos extremos','Ecualización de tensión entre cables (máx. 10% diferencia)','Prueba de funcionamiento y nivelación'],note:'Una polea nueva NUNCA se monta con cables viejos. 1:1 ≈ 16–24h, 2:1 ≈ 24–36h.'},
-  cm03:{hn:[16,36],hm:[2,4],t:['Por cable: cortar viejo en polea CP → bajar con cordel al foso → subir nuevo desde último acceso','Pasar por polea tractora → deslizar al CP → confeccionar terminal → tensar','Repetir para cada cable (3–8 cables típico) — cada cable: 1–2h según altura','Ecualización final con dinamómetro — diferencia máx. 10% entre cables'],note:'2:1 ≈ 2× tiempo vs 1:1 por doble longitud y poleas de desvío adicionales.'},
-  cm04:{hn:[16,24],hm:[3,5],t:['Fotografía del cableado existente antes de desmontar','Retiro del gabinete antiguo — marcar cada conductor','Montaje del gabinete NICE 3000','Conexión de potencia, tierra, neutro, circuito de seguridades','Conexión del cable viajero, encoder, motor de freno','Programación: tipo motor, polos, velocidad, paradas','Prueba de autotune del variador con motor conectado','Ajuste de curvas de aceleración/desaceleración y nivelación','Prueba del circuito de seguridades completo (cada switch)'],note:'Programación inicial requiere técnico certificado por fabricante.'},
-  cm05:{hn:[4,8],hm:[1,2],t:['Verificar velocidad de disparo requerida (NTC §9.9: v_disparo > v_nominal)','Desmontaje del limitador viejo y su cable','Montaje del nuevo en soporte — tendido del cable por hueco hasta pesa tensora','Verificar tensión del cable y libertad de movimiento','Prueba de disparo manual y reset — verificar actuación en circuito de seguridades']},
-  cm06:{hn:[4,8],hm:[2,4],t:['Verificar alimentación: 220/380V trifásico + 120V monofásico independiente','Verificar tierra ≤10Ω (requerimiento crítico para NICE 3000)','Retiro del tablero antiguo con etiquetado previo','Montaje del nuevo tablero — conexión de circuitos según plano','Rotulación clara de cada circuito','Medición de tierra con telurómetro'],note:'Si tierra > 10Ω el NICE 3000 NO puede instalarse hasta que el cliente corrija.'},
+  cm01:{hn:[48,56],hm:[4,8],t:['Preparación: andamio en C. Máq., polipasto certificado (min. 2× peso máquina), LOTO','Inmovilización de cabina y contrapeso con eslingas certificadas','Desmontaje de terminales y bajada de cables uno a uno','Desconexión eléctrica total con etiquetado de bornes','Desmontaje de máquina vieja del soporte (150–400 kg — proceso crítico)','Verificación y preparación de bancada; adaptadores si requiere','Izaje y posicionamiento de máquina nueva — alineación con plomada al hueco','Montaje de polea de tracción nueva (siempre nueva con máquina)','Instalación de cables nuevos uno a uno con sistema de arrastre por cordel','Confección de terminales (prensado hidráulico) — uno por cable, verificación de carga','Conexión eléctrica al NICE 3000, parametrización del variador, ajuste de freno','Prueba sin carga → con carga nominal → ajuste fino de nivelación'],note:'5–7 días reales con 2 técnicos. Cables y polea siempre nuevos.'},
+  cm02:{hn:[32,40],hm:[3,6],t:['Inmovilización idéntica a cm01','Bajada y extracción de todos los cables viejos uno a uno','Desmontaje de polea vieja del eje (requiere extractor de poleas)','Montaje de polea nueva — verificación de alineación de canales','Instalación de cables nuevos uno a uno','Confección de terminales en ambos extremos','Ecualización de tensión entre cables (máx. 10% diferencia)','Prueba de funcionamiento y nivelación'],note:'Una polea nueva NUNCA se monta con cables viejos. 1:1 ≈ 16–24h, 2:1 ≈ 24–36h.'},
+  cm03:{hn:[28,36],hm:[2,4],t:['Por cable: cortar viejo en polea CP → bajar con cordel al foso → subir nuevo desde último acceso','Pasar por polea tractora → deslizar al CP → confeccionar terminal → tensar','Repetir para cada cable (3–8 cables típico) — cada cable: 1–2h según altura','Ecualización final con dinamómetro — diferencia máx. 10% entre cables'],note:'2:1 ≈ 2× tiempo vs 1:1 por doble longitud y poleas de desvío adicionales.'},
+  cm04:{hn:[20,24],hm:[3,5],t:['Fotografía del cableado existente antes de desmontar','Retiro del gabinete antiguo — marcar cada conductor','Montaje del gabinete NICE 3000','Conexión de potencia, tierra, neutro, circuito de seguridades','Conexión del cable viajero, encoder, motor de freno','Programación: tipo motor, polos, velocidad, paradas','Prueba de autotune del variador con motor conectado','Ajuste de curvas de aceleración/desaceleración y nivelación','Prueba del circuito de seguridades completo (cada switch)'],note:'Programación inicial requiere técnico certificado por fabricante.'},
+  cm05:{hn:[6,8],hm:[1,2],t:['Verificar velocidad de disparo requerida (NTC §9.9: v_disparo > v_nominal)','Desmontaje del limitador viejo y su cable','Montaje del nuevo en soporte — tendido del cable por hueco hasta pesa tensora','Verificar tensión del cable y libertad de movimiento','Prueba de disparo manual y reset — verificar actuación en circuito de seguridades']},
+  cm06:{hn:[6,8],hm:[2,4],t:['Verificar alimentación: 220/380V trifásico + 120V monofásico independiente','Verificar tierra ≤10Ω (requerimiento crítico para NICE 3000)','Retiro del tablero antiguo con etiquetado previo','Montaje del nuevo tablero — conexión de circuitos según plano','Rotulación clara de cada circuito','Medición de tierra con telurómetro'],note:'Si tierra > 10Ω el NICE 3000 NO puede instalarse hasta que el cliente corrija.'},
   cm07:{hn:[2,4],hm:[1,2],t:['Verificar voltaje entrada/salida requerido (típico 220V→110V AC)','Desmontaje del transformador viejo','Montaje del nuevo — asegurar ventilación adecuada','Conexión con fusibles de protección — medición de voltajes en bornes de salida']},
-  cm08:{hn:[3,6],hm:[1,2],t:['Verificar tipo de señal (incremental, mín. 1024 PPR para NICE 3000)','Desmontaje del encoder existente','Montaje con acople flexible (nunca rígido) — conexión al variador','Verificar dirección de rotación — ajustar parámetro si invertida','Prueba de autotune']},
-  cm09:{hn:[2,3],hm:[1,2],t:['Instalar luminaria LED — mín. 200 lux en zona de trabajo (NTC §6.3.2)','Circuito independiente del ascensor','Medir lux con luxómetro','Interruptor accesible desde la puerta de acceso']},
+  cm08:{hn:[4,6],hm:[1,2],t:['Verificar tipo de señal (incremental, mín. 1024 PPR para NICE 3000)','Desmontaje del encoder existente','Montaje con acople flexible (nunca rígido) — conexión al variador','Verificar dirección de rotación — ajustar parámetro si invertida','Prueba de autotune']},
+  cm09:{hn:[1,3],hm:[1,2],t:['Instalar luminaria LED — mín. 200 lux en zona de trabajo (NTC §6.3.2)','Circuito independiente del ascensor','Medir lux con luxómetro','Interruptor accesible desde la puerta de acceso']},
   cm10:{hn:[2,4],hm:[1,2],t:['Si mecánico: retirar completamente — el NICE 3000 usa inductores digitales','Si digital: verificar compatibilidad con NICE 3000','Instalar/programar en control nuevo — prueba de selección de pisos en ambos sentidos']},
-  cm11:{hn:[2,3],hm:[1,2],t:['Placa de capacidad nominal visible (NTC §6.3)','Señal de peligro eléctrico en tablero y máquina','Señal "Solo personal autorizado" en puerta','Identificación de cada equipo con placa grabada','Plano de emergencia de rescate fijo en C. Máquinas']},
+  cm11:{hn:[1,3],hm:[1,2],t:['Placa de capacidad nominal visible (NTC §6.3)','Señal de peligro eléctrico en tablero y máquina','Señal "Solo personal autorizado" en puerta','Identificación de cada equipo con placa grabada','Plano de emergencia de rescate fijo en C. Máquinas']},
   cm12:{hn:[2,4],hm:[1,2],t:['Cerradura exclusiva para técnicos (NTC §6.3.1)','Sellar penetraciones del hueco hacia C. Máquinas','Verificar ventilación — temp. máx. 40°C en operación','Acceso libre de 0.5m alrededor de cada equipo']},
-  cm13:{hn:[3,6],hm:[1,2],t:['Solo aplica en tracción 2:1 — terminales anclados en plato del piso C. Máquinas','Desmontaje de terminales viejos del plato de recibimiento','Confección de terminales nuevos (socket fundido o prensado hidráulico)','Instalación en plato de recibimiento y tensado','Ecualización de tensión — diferencia máx. 10% entre terminales']},
-  cm14:{hn:[4,8],hm:[1,3],t:['Su presencia depende del entrecaído — puede existir en 1:1 o 2:1','Requiere desmontar cables para retirar la polea','Verificar alineación exacta con canales de polea tractora','Montar polea nueva — verificar que rueda libremente','Remontar cables y verificar centrado en canales']},
+  cm13:{hn:[4,6],hm:[1,2],t:['Solo aplica en tracción 2:1 — terminales anclados en plato del piso C. Máquinas','Desmontaje de terminales viejos del plato de recibimiento','Confección de terminales nuevos (socket fundido o prensado hidráulico)','Instalación en plato de recibimiento y tensado','Ecualización de tensión — diferencia máx. 10% entre terminales']},
+  cm14:{hn:[6,8],hm:[1,3],t:['Su presencia depende del entrecaído — puede existir en 1:1 o 2:1','Requiere desmontar cables para retirar la polea','Verificar alineación exacta con canales de polea tractora','Montar polea nueva — verificar que rueda libremente','Remontar cables y verificar centrado en canales']},
   tc01:{hn:[2,4],hm:[1,2],t:['Desmontaje de botonera vieja','Montaje de caja de inspección nueva en posición accesible desde techo','Conexión: SUBIR/BAJAR (vel. inspección), STOP, HABILITAR','Verificar vel. de inspección ≤0.63 m/s (NTC)','Probar que el STOP corta el circuito de seguridades']},
   tc02:{hn:[6,10],hm:[2,3],t:['Desmontaje del motor antiguo del operador','Verificar compatibilidad con variador de puertas','Montaje del motor nuevo — alineación del acople de transmisión','Ajuste de torque de apertura y cierre','Programar velocidades de apertura (rápida) y cierre (lenta en zona de riesgo)','Verificar sincronización con puertas de hall']},
-  tc03:{hn:[4,8],hm:[2,3],t:['Desmontaje del variador viejo — fotografiar conexiones','Montaje del variador nuevo (VVVF tipo FERMATOR/SELCOM)','Conexión a motor y señal del control principal','Parametrización: perfil de velocidad, par de arranque, detección de obstáculo','Prueba de apertura suave, cierre suave, reapertura ante obstáculo']},
+  tc03:{hn:[6,8],hm:[2,3],t:['Desmontaje del variador viejo — fotografiar conexiones','Montaje del variador nuevo (VVVF tipo FERMATOR/SELCOM)','Conexión a motor y señal del control principal','Parametrización: perfil de velocidad, par de arranque, detección de obstáculo','Prueba de apertura suave, cierre suave, reapertura ante obstáculo']},
   tc04:{hn:[3,5],hm:[1,2],t:['Desmontaje de biestables viejos','Montaje en regleta omega en posición correcta','Ajuste de distancia al activador','Verificar señal de "puerta abierta" y "puerta cerrada" al control','Probar en cada piso que la señal coincide con la posición real']},
   tc05:{hn:[3,5],hm:[1,2],t:['Desmontaje de la banda vieja del marco de cabina','Montaje: emisor en un montante, receptor en el opuesto','Cobertura: 25mm a 1800mm del piso de cabina (NTC §7.5.2)','Prueba con objetos de diferentes tamaños y alturas']},
-  tc06:{hn:[2,3],hm:[1,2],t:['Desmontaje del contacto viejo','Montaje en posición "puerta completamente cerrada"','Ajuste del actuador mecánico — gap máx. 2mm','Verificar en circuito de seguridades: sin puerta cerrada no hay movimiento']},
-  tc07:{hn:[2,3],hm:[1,2],t:['Retirar batería vieja (disposición especial)','Instalar batería nueva de misma capacidad mínima (Ah)','Verificar carga flotante','Prueba de autonomía: cortar alimentación → luz emergencia + alarma ≥1h (NTC §8.4)']},
-  tc08:{hn:[4,8],hm:[2,4],t:['NTC §5.7: corral en todos los lados excepto el de acceso','Desmontaje del corral viejo','Montaje anclado a estructura del techo de cabina (no a paneles de acabado)','Altura mínima del pasamanos: 700mm desde superficie del techo','Señal de peligro instalada']},
+  tc06:{hn:[1,3],hm:[1,2],t:['Desmontaje del contacto viejo','Montaje en posición "puerta completamente cerrada"','Ajuste del actuador mecánico — gap máx. 2mm','Verificar en circuito de seguridades: sin puerta cerrada no hay movimiento']},
+  tc07:{hn:[1,3],hm:[1,2],t:['Retirar batería vieja (disposición especial)','Instalar batería nueva de misma capacidad mínima (Ah)','Verificar carga flotante','Prueba de autonomía: cortar alimentación → luz emergencia + alarma ≥1h (NTC §8.4)']},
+  tc08:{hn:[6,8],hm:[2,4],t:['NTC §5.7: corral en todos los lados excepto el de acceso','Desmontaje del corral viejo','Montaje anclado a estructura del techo de cabina (no a paneles de acabado)','Altura mínima del pasamanos: 700mm desde superficie del techo','Señal de peligro instalada']},
   tc09:{hn:[3,5],hm:[1,2],t:['Desmontaje de inductores viejos','Montaje en soporte de techo de cabina','Ajuste de distancia al sensor (5–10mm de la bandera)','Ajuste de zona de nivelación: cabina ±5mm del nivel del piso','Prueba en cada piso']},
-  tc10:{hn:[3,6],hm:[1,2],t:['Desmontaje del pesacargas viejo','Montaje e integración con control','Calibración a cero (vacía) y a plena carga','Control activa sobrecarga al 100%+10% de la carga nominal','Prueba con cargas reales']},
-  tc11:{hn:[2,3],hm:[1,2],t:['Desmontaje del switch viejo','Montaje en bastidor del paracaídas','Ajuste de distancia al activador mecánico','Verificar corte del circuito de seguridades cuando el paracaídas se mueve']},
-  tc12:{hn:[4,8],hm:[1,2],t:['Solo aplica en tracción 1:1','Inmovilizar cabina con eslingas antes de manipular terminales','Desmontaje uno a uno (nunca todos a la vez)','Confección de terminales nuevos','Ecualización con dinamómetro — carga uniforme sobre bastidor de cabina']},
-  tc13:{hn:[4,8],hm:[1,3],t:['Solo aplica en tracción 2:1','Desmontar cables para retirar polea del bastidor de techo','Montar polea nueva verificando alineación con polea tractora','Remontar cables — verificar centrado en canales y tensión uniforme']},
-  re01:{hn:[24,48],hm:[6,12],t:['En modernización se ofrece REALINEACIÓN, no cambio de guías','Medición completa del hueco con plomada laser — registrar desviación por piso','Ajuste de soportes piso a piso: soltar, realinear, reapretar','Verificación de empalmes: máx. 0.5mm de desalineación','Lubricación y verificación de recorrido libre de cabina'],note:'Tiempo varía con N° de paradas — añadir ~2h por cada piso adicional sobre 8. 3–6 días.'},
-  re02:{hn:[12,24],hm:[4,8],t:['Plomada laser por el recorrido del contrapeso','Ajuste de soportes piso a piso','Verificación de empalmes','Lubricación — ~60% del tiempo de guías de cabina']},
-  re03:{hn:[8,16],hm:[2,4],t:['Inmovilizar contrapeso con eslingas antes de manipular','Desmontaje del bastidor existente — sacar las pesas','Montar bastidor nuevo — verificar paralelismo con guías','Cargar pesas según cálculo: 40–50% de carga nominal + peso de cabina vacía','Liberar y verificar recorrido libre en todo el hueco']},
-  re04:{hn:[3,6],hm:[1,2],t:['Desmontaje de las 4 zapatas (2 superiores, 2 inferiores)','Medir holgura con guía — si >3mm en deslizante o >1mm en rodillo, cambiar','Montar zapatas nuevas — ajustar holgura con calzas (0.5–1.5mm)','Verificar recorrido suave en todo el hueco']},
+  tc10:{hn:[4,6],hm:[1,2],t:['Desmontaje del pesacargas viejo','Montaje e integración con control','Calibración a cero (vacía) y a plena carga','Control activa sobrecarga al 100%+10% de la carga nominal','Prueba con cargas reales']},
+  tc11:{hn:[1,3],hm:[1,2],t:['Desmontaje del switch viejo','Montaje en bastidor del paracaídas','Ajuste de distancia al activador mecánico','Verificar corte del circuito de seguridades cuando el paracaídas se mueve']},
+  tc12:{hn:[6,8],hm:[1,2],t:['Solo aplica en tracción 1:1','Inmovilizar cabina con eslingas antes de manipular terminales','Desmontaje uno a uno (nunca todos a la vez)','Confección de terminales nuevos','Ecualización con dinamómetro — carga uniforme sobre bastidor de cabina']},
+  tc13:{hn:[6,8],hm:[1,3],t:['Solo aplica en tracción 2:1','Desmontar cables para retirar polea del bastidor de techo','Montar polea nueva verificando alineación con polea tractora','Remontar cables — verificar centrado en canales y tensión uniforme']},
+  re01:{hn:[40,48],hm:[6,12],t:['En modernización se ofrece REALINEACIÓN, no cambio de guías','Medición completa del hueco con plomada laser — registrar desviación por piso','Ajuste de soportes piso a piso: soltar, realinear, reapretar','Verificación de empalmes: máx. 0.5mm de desalineación','Lubricación y verificación de recorrido libre de cabina'],note:'Tiempo varía con N° de paradas — añadir ~2h por cada piso adicional sobre 8. 3–6 días.'},
+  re02:{hn:[20,24],hm:[4,8],t:['Plomada laser por el recorrido del contrapeso','Ajuste de soportes piso a piso','Verificación de empalmes','Lubricación — ~60% del tiempo de guías de cabina']},
+  re03:{hn:[12,16],hm:[2,4],t:['Inmovilizar contrapeso con eslingas antes de manipular','Desmontaje del bastidor existente — sacar las pesas','Montar bastidor nuevo — verificar paralelismo con guías','Cargar pesas según cálculo: 40–50% de carga nominal + peso de cabina vacía','Liberar y verificar recorrido libre en todo el hueco']},
+  re04:{hn:[4,6],hm:[1,2],t:['Desmontaje de las 4 zapatas (2 superiores, 2 inferiores)','Medir holgura con guía — si >3mm en deslizante o >1mm en rodillo, cambiar','Montar zapatas nuevas — ajustar holgura con calzas (0.5–1.5mm)','Verificar recorrido suave en todo el hueco']},
   re05:{hn:[2,4],hm:[1,2],t:['Mismo procedimiento que zapatas de cabina pero en bastidor del contrapeso','Acceso desde distintos pisos con cabina detenida y LOTO activo']},
-  re06:{hn:[4,8],hm:[1,2],t:['Desconectar en caja de cabina y en C. Máquinas','Tendido del cable nuevo desde C. Máquinas bajando por el hueco','Formar lazada (radio mín. 8× diámetro del cable)','Conectar en caja de cabina — verificar continuidad de todos los conductores','Longitud = recorrido total + 1.5× altura lazada + 1m extra']},
+  re06:{hn:[6,8],hm:[1,2],t:['Desconectar en caja de cabina y en C. Máquinas','Tendido del cable nuevo desde C. Máquinas bajando por el hueco','Formar lazada (radio mín. 8× diámetro del cable)','Conectar en caja de cabina — verificar continuidad de todos los conductores','Longitud = recorrido total + 1.5× altura lazada + 1m extra']},
   re07:{hn:[2,4],hm:[1,2],t:['Verificar posición de cada switch (NTC §9.7)','Desacelerador: activa antes del final de recorrido para reducir velocidad','Límite final: activa antes del tope mecánico','Ajuste preciso — verificar activación a velocidad correcta']},
-  re08:{hn:[1.5,3],hm:[0.5,1],t:['Una cerradura por piso — ascensor fuera de servicio durante el trabajo','Montaje de cerradura nueva — ajuste de leva de apertura de cabina','Tolerancia: ±5mm para enganche/desenganche','Verificar señal "puerta de hall cerrada" en circuito de seguridades'],note:'Tiempo × N° de pisos.'},
-  re09:{hn:[2,3],hm:[1,2],t:['NTC §5.5: rodapié cubre espacio hasta 50mm del piso de cabina','Instalación del nuevo — material metálico o ABS resistente','Asegurar con tornillos (no pegamento)']},
-  re10:{hn:[3,6],hm:[1,2],t:['Faldón de cabina: longitud mín. ≥0.5m bajo el umbral (NTC §5.5)','Faldones de pasillo: cubren espacio entre umbral y cabina por piso','Chapa de acero mínimo 1.5mm']},
-  re11:{hn:[3,6],hm:[1,2],t:['Solo aplica en tracción 1:1','Inmovilizar contrapeso antes de manipular','Desmontaje uno a uno','Confección de terminales nuevos — ecualización con dinamómetro']},
-  re12:{hn:[4,8],hm:[1,2],t:['Solo aplica en tracción 2:1','Inmovilizar contrapeso, desmontar cables, retirar polea vieja','Montar polea nueva — verificar alineación con polea tractora','Remontar cables — verificar centrado en canales']},
+  re08:{hn:[1,3],hm:[0.5,1],t:['Una cerradura por piso — ascensor fuera de servicio durante el trabajo','Montaje de cerradura nueva — ajuste de leva de apertura de cabina','Tolerancia: ±5mm para enganche/desenganche','Verificar señal "puerta de hall cerrada" en circuito de seguridades'],note:'Tiempo × N° de pisos.'},
+  re09:{hn:[1,3],hm:[1,2],t:['NTC §5.5: rodapié cubre espacio hasta 50mm del piso de cabina','Instalación del nuevo — material metálico o ABS resistente','Asegurar con tornillos (no pegamento)']},
+  re10:{hn:[4,6],hm:[1,2],t:['Faldón de cabina: longitud mín. ≥0.5m bajo el umbral (NTC §5.5)','Faldones de pasillo: cubren espacio entre umbral y cabina por piso','Chapa de acero mínimo 1.5mm']},
+  re11:{hn:[4,6],hm:[1,2],t:['Solo aplica en tracción 1:1','Inmovilizar contrapeso antes de manipular','Desmontaje uno a uno','Confección de terminales nuevos — ecualización con dinamómetro']},
+  re12:{hn:[6,8],hm:[1,2],t:['Solo aplica en tracción 2:1','Inmovilizar contrapeso, desmontar cables, retirar polea vieja','Montar polea nueva — verificar alineación con polea tractora','Remontar cables — verificar centrado en canales']},
   fo01:{hn:[2,4],hm:[1,2],t:['Desacelerador inferior: activa frenado antes del final de recorrido inferior','Límite inferior: corta circuito antes del tope mecánico','Verificar distancias según velocidad nominal','Prueba de actuación a velocidad nominal']},
   fo02:{hn:[1,2],hm:[0.5,1],t:['Verificar tipo (pulsador con enclavamiento mecánico) y estado del contacto','Reemplazar si dañado o inaccesible','El stop corta circuito de seguridades — verificar']},
-  fo03:{hn:[3,6],hm:[1,2],t:['Buffers de resorte (≤1 m/s): verificar altura libre (NTC §9.10)','Buffers hidráulicos (>1 m/s): verificar nivel de aceite y retorno libre','Montar buffers nuevos anclados al plinto del foso','Buffer cabina y buffer contrapeso: alturas iguales y simétricas']},
-  fo04:{hn:[6,12],hm:[2,4],t:['COMPONENTE CRÍTICO — requiere técnico certificado','Desmontaje del paracaídas viejo del bastidor de cabina','Montaje nuevo — verificar tipo: progresivo (>1m/s) o instantáneo (≤1m/s)','Conexión del cable del limitador al brazo del paracaídas','Switch de garras instalado y verificado','Prueba de disparo: verificar que el paracaídas actúa y sujeta la cabina','OBLIGATORIO: registro escrito de la prueba para inspección ONAC'],note:'Requiere 2 técnicos. Es la operación más riesgosa de la modernización.'},
+  fo03:{hn:[4,6],hm:[1,2],t:['Buffers de resorte (≤1 m/s): verificar altura libre (NTC §9.10)','Buffers hidráulicos (>1 m/s): verificar nivel de aceite y retorno libre','Montar buffers nuevos anclados al plinto del foso','Buffer cabina y buffer contrapeso: alturas iguales y simétricas']},
+  fo04:{hn:[8,12],hm:[2,4],t:['COMPONENTE CRÍTICO — requiere técnico certificado','Desmontaje del paracaídas viejo del bastidor de cabina','Montaje nuevo — verificar tipo: progresivo (>1m/s) o instantáneo (≤1m/s)','Conexión del cable del limitador al brazo del paracaídas','Switch de garras instalado y verificado','Prueba de disparo: verificar que el paracaídas actúa y sujeta la cabina','OBLIGATORIO: registro escrito de la prueba para inspección ONAC'],note:'Requiere 2 técnicos. Es la operación más riesgosa de la modernización.'},
   fo05:{hn:[1,2],hm:[0.5,1],t:['NTC §9.9: distancia mínima al piso del foso = 200mm con cabina en piso más bajo','Verificar posición — si muy cerca del piso, relocalizar el anclaje','Verificar cable del limitador']},
   fo06:{hn:[1,2],hm:[0.5,1],t:['Detecta si la pesa del limitador pierde tensión (cable roto)','Montaje con actuador correctamente posicionado sobre la pesa','Verificar: al simular cable roto, el circuito se corta']},
-  fo07:{hn:[2,3],hm:[1,2],t:['Verificar si el control nuevo requiere este sistema','Montar escobillas nuevas con presión de contacto correcta sobre la guía','Verificar continuidad eléctrica bastidor cabina → tierra de instalación']},
+  fo07:{hn:[1,3],hm:[1,2],t:['Verificar si el control nuevo requiere este sistema','Montar escobillas nuevas con presión de contacto correcta sobre la guía','Verificar continuidad eléctrica bastidor cabina → tierra de instalación']},
   fo08:{hn:[2,4],hm:[1,2],t:['Montaje bajo el bastidor de cabina o en el foso','Calibración a cero (cabina vacía) y a plena carga','Verificar señal al control (0–10V o 4–20mA según tipo)','Prueba de sobrecarga con el cliente presente']},
   fo09:{hn:[2,4],hm:[1,2],t:['NTC §6.4.2: espacio libre en foso cuando cabina reposa en buffers: mín. 500mm','Verificar y documentar dimensiones del foso','Si no cumple: notificar al cliente (puede requerir trabajo civil)','Instalar escalera de acceso si foso >1.5m de profundidad']},
-  fo10:{hn:[2,3],hm:[1,2],t:['NTC §6.4.3: mínimo 50 lux en el foso','Instalar luminaria cada 5m de profundidad','Interruptor accesible desde puerta de acceso al foso','Medir lux con luxómetro — circuito independiente del ascensor']},
+  fo10:{hn:[1,3],hm:[1,2],t:['NTC §6.4.3: mínimo 50 lux en el foso','Instalar luminaria cada 5m de profundidad','Interruptor accesible desde puerta de acceso al foso','Medir lux con luxómetro — circuito independiente del ascensor']},
   fo11:{hn:[1,2],hm:[0.5,1],t:['Luminaria fija al chasis inferior de cabina — ilumina el foso desde altura','Conexión al circuito de cabina (cable viajero)']},
-  ca01:{hn:[4,8],hm:[1,2],t:['Desmontaje de botonera vieja','Montaje de botonera nueva — conexión serial CAN bus al NICE 3000','Programación: N° de pisos, señal acústica, Braille','Verificar cada pulsador: responde, luz de confirmación, señal acústica']},
+  ca01:{hn:[6,8],hm:[1,2],t:['Desmontaje de botonera vieja','Montaje de botonera nueva — conexión serial CAN bus al NICE 3000','Programación: N° de pisos, señal acústica, Braille','Verificar cada pulsador: responde, luz de confirmación, señal acústica']},
   ca02:{hn:[3,5],hm:[1,2],t:['Altura: 900–1200mm del piso de cabina (norma accesibilidad)','Pulsadores con caracteres en relieve y código Braille','Señal acústica de confirmación obligatoria','Conexión en paralelo a la botonera principal']},
   ca03:{hn:[2,4],hm:[1,2],t:['Desmontaje del indicador viejo','Montaje del display nuevo (LED 7 segmentos o LCD)','Conexión serial al NICE 3000 — programar dirección serial','Verificar que muestra el piso correcto — incluir pisos negativos si hay']},
   ca04:{hn:[2,4],hm:[1,2],t:['NTC §8.3: comunicación bidireccional obligatoria — cabina ↔ local vigilado','Montaje del citófono en cabina','Tendido de cable hasta portería o administración','Prueba de comunicación en ambas direcciones']},
   ca05:{hn:[1,2],hm:[0.5,1],t:['NTC §8.3: alarma ≥65 dBA a 1m de distancia','Montaje en cabina o exterior (audible desde el pasillo)','Prueba de nivel de sonido con sonómetro']},
   ca06:{hn:[1,2],hm:[0.5,1],t:['NTC §8.4: autonomía mínima 1 hora al 10% de iluminación normal','Montaje con batería interna recargable','Prueba de autonomía: cortar alimentación → verificar ≥1h']},
-  ca07:{hn:[6,12],hm:[2,4],t:['Desmontaje del piso viejo — verificar que la estructura no está dañada','Reparar chapa de piso si hay deformación','Instalación: porcelanato, vinilo PVC o chapa antideslizante','Fijar mecánicamente — verificar nivelación ±2mm']},
-  ca08:{hn:[4,8],hm:[2,3],t:['Desmontaje del cielo raso viejo — registrar conexiones de iluminación','Montaje de estructura del nuevo techo (perfiles de aluminio o chapa)','Instalación de iluminación LED — mín. 100 lux (NTC §8.4)','Verificar que el sistema de ventilación no queda obstruido']},
-  ca09:{hn:[8,16],hm:[2,4],t:['Desmontaje de todos los paneles (4 paredes)','Limpieza y verificación de la estructura metálica de la cabina','Instalación de paneles nuevos: acero inox, laminado HPL o vidrio','Fijar mecánicamente con tornillos o clips','Verificar que no interfieren con el recorrido de las puertas']},
-  ca10:{hn:[2,3],hm:[1,2],t:['NTC §5.9: pasamano a 900mm del piso en al menos una pared','Marcar y taladrar soportes en la pared de cabina','Montar pasamanos — verificar resistencia al tirón: ≥100kg sin desprenderse']},
-  ca11:{hn:[2,3],hm:[1,2],t:['Montar con fijación mecánica (no solo pegamento)','Para ascensores públicos: espejo laminado de seguridad','Cubrir panel trasero o hasta 1000mm de altura desde el piso','Verificar que no vibra con el movimiento del ascensor']},
+  ca07:{hn:[8,12],hm:[2,4],t:['Desmontaje del piso viejo — verificar que la estructura no está dañada','Reparar chapa de piso si hay deformación','Instalación: porcelanato, vinilo PVC o chapa antideslizante','Fijar mecánicamente — verificar nivelación ±2mm']},
+  ca08:{hn:[6,8],hm:[2,3],t:['Desmontaje del cielo raso viejo — registrar conexiones de iluminación','Montaje de estructura del nuevo techo (perfiles de aluminio o chapa)','Instalación de iluminación LED — mín. 100 lux (NTC §8.4)','Verificar que el sistema de ventilación no queda obstruido']},
+  ca09:{hn:[12,16],hm:[2,4],t:['Desmontaje de todos los paneles (4 paredes)','Limpieza y verificación de la estructura metálica de la cabina','Instalación de paneles nuevos: acero inox, laminado HPL o vidrio','Fijar mecánicamente con tornillos o clips','Verificar que no interfieren con el recorrido de las puertas']},
+  ca10:{hn:[1,3],hm:[1,2],t:['NTC §5.9: pasamano a 900mm del piso en al menos una pared','Marcar y taladrar soportes en la pared de cabina','Montar pasamanos — verificar resistencia al tirón: ≥100kg sin desprenderse']},
+  ca11:{hn:[1,3],hm:[1,2],t:['Montar con fijación mecánica (no solo pegamento)','Para ascensores públicos: espejo laminado de seguridad','Cubrir panel trasero o hasta 1000mm de altura desde el piso','Verificar que no vibra con el movimiento del ascensor']},
   ca12:{hn:[3,5],hm:[1,2],t:['Iluminación: mínimo 100 lux en piso de cabina (NTC §8.4) — medir con luxómetro','Ventilación: apertura mínima del 1% del área de la cabina (NTC §5.8)','Instalar ventilador 24VDC si no cumple — activado con movimiento del ascensor']},
   pu01:{hn:[2,4],hm:[1,2],t:['Tiempo = 2–4h × N° de pisos','Desmontaje de hojas viejas del riel superior y guía inferior','Inspección del riel superior — reemplazar si desgastado','Instalación de hojas nuevas — verificar altura libre (3–5mm entre hoja y umbral)','Verificar apertura suave sin rozamientos']},
-  pu02:{hn:[4,8],hm:[2,4],t:['Tiempo = 4–8h × N° de pisos','Desmontaje de marcos y umbral viejo','Instalación de marcos nuevos nivelados y aplomados — fijación a mampostería','Umbral nivelado al ras del piso del pasillo — no crear escalón >5mm','Sellado de juntas entre marco y mampostería']},
+  pu02:{hn:[6,8],hm:[2,4],t:['Tiempo = 4–8h × N° de pisos','Desmontaje de marcos y umbral viejo','Instalación de marcos nuevos nivelados y aplomados — fijación a mampostería','Umbral nivelado al ras del piso del pasillo — no crear escalón >5mm','Sellado de juntas entre marco y mampostería']},
   pu03:{hn:[0.5,1],hm:[0.5,1],t:['Una zapata por piso — trabajo muy rápido','Montar zapata nueva — ajustar holgura con el riel: 0.5–1.5mm']},
   pu04:{hn:[0.5,1],hm:[0.5,1],t:['Solo en piso 1 o en todos los pisos según normativa local','Verificar apertura de emergencia con llave triangular de ascensores']},
   pu05:{hn:[1,2],hm:[0.5,1],t:['Montar en cada piso — rodillos de acoplamiento alineados con leva de cabina','Ajuste del espacio de acoplamiento: 25–35mm entre rodillos y leva','Verificar apertura sincronizada cabina/hall']},
   pu06:{hn:[1,2],hm:[0.5,1],t:['Tiempo = 1–2h × N° de pisos','Desmontaje de botoneras viejas — montaje de nuevas empotradas','Conexión serial al NICE 3000 — programar dirección serial','Verificar: pulsador activa llamado, luz de confirmación, señal acústica']},
   pu07:{hn:[1,2],hm:[0.5,1],t:['Tiempo = 1–2h × N° de pisos','Desmontaje de indicadores viejos — montaje de displays nuevos','Conexión serial al control — programar dirección serial','Verificar piso correcto y flecha de dirección correcta']},
-  pu08:{hn:[3,6],hm:[1,2],t:['Tendido del cable principal desde C. Máquinas bajando por el hueco o ducto de hall','Derivación en cada piso para botonera + indicador + cerradura','Verificar continuidad de cada circuito con multímetro','Etiquetar cada cable en ambos extremos']},
+  pu08:{hn:[4,6],hm:[1,2],t:['Tendido del cable principal desde C. Máquinas bajando por el hueco o ducto de hall','Derivación en cada piso para botonera + indicador + cerradura','Verificar continuidad de cada circuito con multímetro','Etiquetar cada cable en ambos extremos']},
 };
 
 const ITEM_NAMES = {
@@ -1345,7 +1345,8 @@ function renderCronograma(p){
   html += `<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:14px 16px;margin-bottom:20px">
     <div style="font-size:11px;font-weight:500;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">Horas por zona</div>
     <div style="display:flex;flex-direction:column;gap:8px">`;
-  const allZonas = Object.keys(byZona);
+  const ZONA_ORDER = ['Cuarto de máquinas','Techo de cabina','Recorrido / hueco','Foso','Cabina','Puertas de hall'];
+  const allZonas = ZONA_ORDER.filter(z => byZona[z]);
   const maxZH = Math.max(...allZonas.map(z=>zonaHmax(z)));
   allZonas.forEach(z => {
     const hmin = zonaHmin(z), hmax = zonaHmax(z);
@@ -1386,7 +1387,17 @@ function renderCronograma(p){
     html += `</div>`;
   });
 
-  html += `<div style="font-size:11px;color:var(--color-text-tertiary);text-align:center;padding:16px 0">
+  // Fecha section
+  html += `<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:16px;margin-top:20px;margin-bottom:8px">
+    <div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:var(--color-text-secondary);margin-bottom:12px">Programación de obra</div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <label style="font-size:13px;color:var(--color-text-secondary)">Fecha de inicio:</label>
+      <input type="date" id="crono-fecha-inicio" style="font-size:13px;padding:6px 10px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:var(--color-background-primary);color:var(--color-text-primary);font-family:var(--font-sans)"
+        onchange="calcFechaFin(${diasMax})">
+      <div id="crono-fecha-fin" style="font-size:13px;color:var(--color-text-secondary)">Selecciona una fecha de inicio</div>
+    </div>
+  </div>
+  <div style="font-size:11px;color:var(--color-text-tertiary);text-align:center;padding:10px 0 16px">
     Tiempos en horas-técnico (1 técnico). Con 2 técnicos dividir entre 1.5–1.7. Jornada efectiva en campo = 7h.
   </div></div>`;
 
@@ -1396,8 +1407,77 @@ function renderCronograma(p){
 function togCronoRow(id){
   const el = document.getElementById(id);
   if(!el) return;
-  document.querySelectorAll('[id^="crono-"]').forEach(d=>{ if(d.id!==id) d.style.display='none'; });
+  document.querySelectorAll('[id^="crono-"]').forEach(d=>{ if(d.id!==id && d.id!=='crono-fecha-inicio' && d.id!=='crono-fecha-fin') d.style.display='none'; });
   el.style.display = el.style.display==='none'?'block':'none';
+}
+
+function getFestivosColombia(year){
+  // Fixed holidays
+  const fixed = [
+    `${year}-01-01`,`${year}-05-01`,`${year}-07-20`,`${year}-08-07`,`${year}-12-08`,`${year}-12-25`
+  ];
+  // Easter-based holidays (Semana Santa + Ascension etc)
+  function easter(y){
+    const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4;
+    const f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30;
+    const i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7;
+    const m=Math.floor((a+11*h+22*l)/451);
+    const month=Math.floor((h+l-7*m+114)/31);
+    const day=((h+l-7*m+114)%31)+1;
+    return new Date(y,month-1,day);
+  }
+  function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
+  function toStr(d){ return d.toISOString().split('T')[0]; }
+  // Next monday rule for some holidays
+  function nextMonday(d){
+    const day=d.getDay();
+    if(day===1) return d;
+    const diff = day===0 ? 1 : 8-day;
+    return addDays(d,diff);
+  }
+  const e = easter(year);
+  const easterBased = [
+    toStr(addDays(e,-3)), // Jueves Santo
+    toStr(addDays(e,-2)), // Viernes Santo
+    toStr(nextMonday(addDays(e,39))), // Ascensión
+    toStr(nextMonday(addDays(e,60))), // Corpus Christi
+    toStr(nextMonday(addDays(e,68))), // Sagrado Corazón
+  ];
+  // Moveable to next monday: Reyes, San José, San Pedro, Asunción, Día Raza, Independencia Cartagena, Todos Santos, Independencia Iberoamérica
+  const moveable = [
+    [1,6],[3,19],[6,29],[8,15],[10,12],[11,1],[11,11],[1,1]
+  ].map(([m,d]) => {
+    const dt = new Date(year,m-1,d);
+    return toStr(nextMonday(dt));
+  });
+  return new Set([...fixed,...easterBased,...moveable]);
+}
+
+function calcFechaFin(diasMax){
+  const input = document.getElementById('crono-fecha-inicio');
+  const output = document.getElementById('crono-fecha-fin');
+  if(!input || !output || !input.value) return;
+  const [y,m,d] = input.value.split('-').map(Number);
+  let current = new Date(y,m-1,d);
+  // Collect festivos for current year and next
+  const festivos = new Set([...getFestivosColombia(y),...getFestivosColombia(y+1)]);
+  let diasContados = 0;
+  let iteraciones = 0;
+  while(diasContados < diasMax && iteraciones < 500){
+    iteraciones++;
+    const dow = current.getDay();
+    const str = current.toISOString().split('T')[0];
+    if(dow !== 0 && dow !== 6 && !festivos.has(str)){
+      diasContados++;
+    }
+    if(diasContados < diasMax) current.setDate(current.getDate()+1);
+  }
+  const opts = {weekday:'long',year:'numeric',month:'long',day:'numeric'};
+  const fechaStr = current.toLocaleDateString('es-CO',opts);
+  const diffMs = current - new Date(y,m-1,d);
+  const diffDias = Math.round(diffMs/(1000*60*60*24))+1;
+  output.innerHTML = `<span style="color:var(--color-text-success);font-weight:500">Finalización estimada: ${fechaStr}</span>
+    <span style="color:var(--color-text-tertiary);font-size:11px;margin-left:8px">(${diffDias} días calendario)</span>`;
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
