@@ -274,6 +274,7 @@ button{font-family:var(--font);cursor:pointer;border:none}
           <div class="tabs-row">
             <button class="tab-btn active" onclick="switchTab('informe',this)">📋 Informe técnico</button>
             <button class="tab-btn" onclick="switchTab('decisiones',this)">⚖️ Decisiones comerciales</button>
+            <button class="tab-btn" onclick="switchTab('cotizacion',this)">💰 Cotización</button>
           </div>
           <div class="tab-content">
             <div class="tab-pane active" id="tab-informe">
@@ -305,6 +306,7 @@ const TBL_PROYECTOS  = 'tblVly4txK2GjYBid';
 const TBL_ITEMS      = 'tblbmQwbOLVtNqLFR';
 const TBL_FOTOS      = 'tblZ2TgL2MrIspuNO';
 const TBL_DECISIONES = 'tblRk1gJ5CadgsiOC';
+const TBL_CATALOGO   = 'tblT7iHQzSLNWPscB';
 
 const AT = (tbl, params='') =>
   fetch(`https://api.airtable.com/v0/${BASE_ID}/${tbl}${params}`, {
@@ -330,6 +332,7 @@ let allProyectos = [];
 let allItems     = [];
 let allFotos     = [];
 let allDecisiones= [];
+let allCatalogo  = [];
 let curProyecto  = null;
 let decisionState= {}; // { pkgKey: { decision, obs, airtableId } }
 let needsTierraGlobal = false;
@@ -396,16 +399,18 @@ async function init(){
 
 async function loadAll(){
   try {
-    const [pRes, iRes, fRes, dRes] = await Promise.all([
+    const [pRes, iRes, fRes, dRes, cRes] = await Promise.all([
       fetchAll(TBL_PROYECTOS),
       fetchAll(TBL_ITEMS),
       fetchAll(TBL_FOTOS),
       fetchAll(TBL_DECISIONES),
+      fetchAll(TBL_CATALOGO),
     ]);
     allProyectos  = pRes;
     allItems      = iRes;
     allFotos      = fRes;
     allDecisiones = dRes;
+    allCatalogo   = cRes;
   } catch(e){
     console.error(e);
     toast('Error al conectar con Airtable');
@@ -554,6 +559,7 @@ function switchTab(name, btn){
   btn.classList.add('active');
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
+  if(name === 'cotizacion' && curProyecto) renderCotizacion(curProyecto);
 }
 
 function renderDetail(p){
@@ -972,6 +978,171 @@ async function savePkg(pkgKey, pid){
   toast(`${saved} decisión(es) guardada(s) ✓`);
 }
 
+// ─── COTIZACIÓN ───────────────────────────────────────────────────────────────
+function renderCotizacion(p){
+  const pid = p.id;
+  const f   = p.fields;
+  const paradas   = parseInt(f['Paradas'] || f['paradas'] || 0);
+  const traccion  = (f['Tracción'] || f['traccion'] || '').toLowerCase();
+  const is21      = traccion.includes('2:1');
+  const items     = allItems.filter(i => Array.isArray(i.fields['Proyecto']) && i.fields['Proyecto'].includes(pid));
+
+  // Get N° cables from cm03 item
+  const cm03item  = items.find(i => { const r=(i.fields['ID ítem']||'').split('_').pop(); return r==='cm03'; });
+  const nCables   = cm03item ? parseInt((parseCampos(cm03item.fields['Campos técnicos'])['N.° de cables'] || '0')) : 0;
+
+  // Build decisions map: itemId → decision label
+  const decsMap = {};
+  allDecisiones.filter(d => Array.isArray(d.fields['Proyectos']) && d.fields['Proyectos'].includes(pid))
+    .forEach(d => {
+      const key = d.fields['ID decisión'] || '';
+      const parts = key.split('_');
+      if(parts.length >= 3){
+        const itemId = parts.slice(2).join('_');
+        decsMap[itemId] = d.fields['Decisión'] || '';
+      }
+    });
+
+  // Build catalog map: "itemId_decision" → catalog record
+  const catMap = {};
+  allCatalogo.forEach(c => {
+    const id = c.fields['ID catalogo'] || '';
+    catMap[id] = c.fields;
+  });
+
+  function decToKey(dec){
+    return dec.toLowerCase().replace(/ /g,'_');
+  }
+
+  function calcPrecio(itemId, dec){
+    if(!dec || dec === 'Pendiente por definir' || dec === 'No aplica') return null;
+    const catKey = `${itemId}_${decToKey(dec)}`;
+    const cat = catMap[catKey];
+    if(!cat) return null;
+    const tipo    = cat['Tipo de cálculo'] || 'Fijo';
+    const pventa  = cat['Precio venta COP'] || 0;
+    if(pventa === 0) return null;
+
+    if(tipo === 'Fijo') return pventa;
+    if(tipo === '× paradas') return pventa * paradas;
+    if(tipo === '× cables') return pventa * nCables;
+    if(tipo === '× paradas × tracción × cables'){
+      const mult = is21 ? 2 : 1;
+      return pventa * paradas * mult * nCables;
+    }
+    return pventa;
+  }
+
+  // Calculate totals per package
+  function getAllPkgItemIds(pkg){
+    if(pkg.subpkgs) return pkg.subpkgs.flatMap(sp => sp.items||[]);
+    return pkg.items || (pkg.items11 ? (is21 ? pkg.items21 : pkg.items11) : []);
+  }
+
+  let grandTotal = 0;
+  let grandCosto = 0;
+  const pkgTotals = [];
+
+  PAQUETES.forEach(pkg => {
+    const itemIds = getAllPkgItemIds(pkg);
+    let pkgPrecio = 0;
+    let pkgCosto  = 0;
+    const itemRows = [];
+
+    itemIds.forEach(itemId => {
+      // Find decision for this item in this package
+      const dec = decsMap[itemId] || '';
+      const precio = calcPrecio(itemId, dec);
+      const catKey = `${itemId}_${decToKey(dec)}`;
+      const cat = catMap[catKey];
+      const costo = cat ? (() => {
+        const tipo = cat['Tipo de cálculo']||'Fijo';
+        const ct = cat['Costo total COP']||0;
+        if(tipo==='Fijo') return ct;
+        if(tipo==='× paradas') return ct*paradas;
+        if(tipo==='× cables') return ct*nCables;
+        if(tipo==='× paradas × tracción × cables'){ const m=is21?2:1; return ct*paradas*m*nCables; }
+        return ct;
+      })() : 0;
+
+      if(precio !== null){
+        pkgPrecio += precio;
+        pkgCosto  += costo;
+        itemRows.push({ itemId, nombre: cat?.['Nombre ítem']||itemId, dec, precio, costo });
+      }
+    });
+
+    if(pkgPrecio > 0){
+      grandTotal += pkgPrecio;
+      grandCosto += pkgCosto;
+      pkgTotals.push({ pkg, pkgPrecio, pkgCosto, itemRows });
+    }
+  });
+
+  const margenGlobal = grandTotal > 0 ? ((grandTotal - grandCosto) / grandTotal * 100).toFixed(1) : 0;
+  const fmt = v => '$' + Math.round(v).toLocaleString('es-CO');
+
+  let html = `<div style="max-width:800px;margin:0 auto;padding:8px 0">`;
+
+  // Summary card
+  html += `<div style="background:rgba(26,133,59,.08);border:1px solid rgba(26,133,59,.25);border-radius:12px;padding:20px 24px;margin-bottom:24px">
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--g400);margin-bottom:14px">Resumen de cotización</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+      <div>
+        <div style="font-size:11px;color:var(--n500);margin-bottom:4px">Costo total Greenergy</div>
+        <div style="font-size:20px;font-weight:700;color:var(--n100)">${fmt(grandCosto)}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--n500);margin-bottom:4px">Precio de venta</div>
+        <div style="font-size:20px;font-weight:700;color:var(--g300)">${fmt(grandTotal)}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--n500);margin-bottom:4px">Margen promedio</div>
+        <div style="font-size:20px;font-weight:700;color:${parseFloat(margenGlobal)>=35?'var(--g300)':'#f59e0b'}">${margenGlobal}%</div>
+      </div>
+    </div>
+  </div>`;
+
+  // Per package breakdown
+  if(pkgTotals.length === 0){
+    html += `<div style="text-align:center;padding:40px;color:var(--n500);font-size:13px">
+      No hay ítems con precios definidos aún.<br>
+      <span style="font-size:12px">Completa el catálogo de precios en Airtable para ver la cotización.</span>
+    </div>`;
+  } else {
+    pkgTotals.forEach(({ pkg, pkgPrecio, pkgCosto, itemRows }) => {
+      const pkgMargen = pkgPrecio > 0 ? ((pkgPrecio - pkgCosto) / pkgPrecio * 100).toFixed(1) : 0;
+      const color = pkg.color || '#64748b';
+      html += `<div style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:10px;margin-bottom:12px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.06)">
+          <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0"></div>
+          <div style="flex:1;font-size:13px;font-weight:600;color:var(--n100)">${pkg.label}</div>
+          <div style="font-size:12px;color:var(--n400)">${pkgMargen}% margen</div>
+          <div style="font-size:14px;font-weight:700;color:var(--g300)">${fmt(pkgPrecio)}</div>
+        </div>`;
+
+      itemRows.forEach(({ itemId, nombre, dec, precio, costo }) => {
+        const decCls = dec==='Vender Nuevo'?'nuevo':dec==='Vender de Segunda'?'segunda':dec==='Vender Mantenimiento'?'mant':'';
+        html += `<div style="display:flex;align-items:center;gap:10px;padding:8px 16px 8px 38px;border-bottom:1px solid rgba(255,255,255,.03)">
+          <span style="font-family:var(--mono);font-size:10px;color:var(--n600);width:40px;flex-shrink:0">${itemId}</span>
+          <span style="flex:1;font-size:12px;color:var(--n300)">${nombre}</span>
+          <span class="pkg-dec-status ${decCls}" style="font-size:10px;padding:2px 7px">${dec}</span>
+          <span style="font-size:12px;color:var(--n400);width:110px;text-align:right">${fmt(costo)}</span>
+          <span style="font-size:12px;color:var(--n100);font-weight:600;width:110px;text-align:right">${fmt(precio)}</span>
+        </div>`;
+      });
+      html += `</div>`;
+    });
+  }
+
+  html += `<div style="font-size:11px;color:var(--n600);text-align:center;padding:16px 0">
+    Los ítems con decisión "No aplica" o "Pendiente por definir" no se incluyen en el total.<br>
+    Los ítems sin precio en el catálogo tampoco se incluyen.
+  </div></div>`;
+
+  document.getElementById('tab-cotizacion').innerHTML = html;
+}
+
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 function normCond(c){
   if(!c) return '';
@@ -1095,10 +1266,12 @@ async function saveToken(){
             <div class="tabs-row">
               <button class="tab-btn active" onclick="switchTab('informe',this)">📋 Informe técnico</button>
               <button class="tab-btn" onclick="switchTab('decisiones',this)">⚖️ Decisiones comerciales</button>
+              <button class="tab-btn" onclick="switchTab('cotizacion',this)">💰 Cotización</button>
             </div>
             <div class="tab-content">
               <div class="tab-pane active" id="tab-informe"><div class="loading"><div class="spinner"></div> Cargando...</div></div>
               <div class="tab-pane" id="tab-decisiones"><div class="loading"><div class="spinner"></div> Cargando...</div></div>
+              <div class="tab-pane" id="tab-cotizacion"><div class="loading"><div class="spinner"></div> Cargando...</div></div>
             </div>
           </div>
         </div>
