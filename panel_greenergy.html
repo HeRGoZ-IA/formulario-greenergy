@@ -961,16 +961,20 @@ function updatePkgProgress(itemDecKey){
 
 async function savePkg(pkgKey, pid){
   const obs = document.getElementById(`pkgobs-${pkgKey}`)?.value || '';
+
   // Get all entries for this package from decisionState
   const pkgEntries = Object.entries(decisionState).filter(([k]) => {
-    // ID format: {pid6chars}_{PKGx}_{itemId}
-    // pid6chars never contains underscore, PKGx never contains underscore
     const parts = k.split('_');
     return parts.length >= 3 && parts[1] === pkgKey;
   });
-  if(!pkgEntries.length){ toast('Sin ítems que guardar'); return; }
+
+  if(!pkgEntries.length){
+    toast('Sin ítems que guardar');
+    return;
+  }
 
   let saved = 0;
+
   for(const [key, st] of pkgEntries){
     const fields = {
       'ID decisión': key,
@@ -981,22 +985,68 @@ async function savePkg(pkgKey, pid){
       'Fecha decisión': new Date().toISOString().split('T')[0],
       'Requiere estudio tierra': needsTierraGlobal,
     };
+
     try {
       if(st.airtableId){
-        await AT_PATCH(TBL_DECISIONES, st.airtableId, fields);
+        const res = await AT_PATCH(TBL_DECISIONES, st.airtableId, fields);
+
+        if(res && res.id){
+          const idx = allDecisiones.findIndex(d => d.id === res.id);
+          if(idx >= 0){
+            allDecisiones[idx] = res;
+          } else {
+            allDecisiones.push(res);
+          }
+        }
       } else {
         const res = await AT_POST(TBL_DECISIONES, { fields });
-        if(res.id){
+
+        if(res && res.id){
           decisionState[key].airtableId = res.id;
-          allDecisiones.push(res);
+
+          const idx = allDecisiones.findIndex(d => d.id === res.id);
+          if(idx >= 0){
+            allDecisiones[idx] = res;
+          } else {
+            allDecisiones.push(res);
+          }
         }
       }
+
       decisionState[key].obs = obs;
       saved++;
-    } catch(e){ console.error(e); }
+    } catch(e){
+      console.error(e);
+    }
   }
+
   const okEl = document.getElementById(`saveok-${pkgKey}`);
-  if(okEl){ okEl.classList.add('show'); setTimeout(()=>okEl.classList.remove('show'),2500); }
+  if(okEl){
+    okEl.classList.add('show');
+    setTimeout(() => okEl.classList.remove('show'), 2500);
+  }
+
+  // Re-render dependent panels after saving
+  if(curProyecto && curProyecto.id === pid){
+    const fechaAntes = document.getElementById('crono-fecha-inicio')?.value || '';
+
+    renderCotizacion(curProyecto);
+    renderCronograma(curProyecto);
+
+    if(fechaAntes){
+      const inp = document.getElementById('crono-fecha-inicio');
+      if(inp){
+        inp.value = fechaAntes;
+        calcFechaFin(_diasMaxCrono);
+      }
+    }
+
+    _updateGenerarBtn();
+  }
+
+  // Refresh project list badges/stats as well
+  renderList();
+
   toast(`${saved} decisión(es) guardada(s) ✓`);
 }
 
