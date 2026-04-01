@@ -347,6 +347,7 @@ let allCatalogo  = [];
 let curProyecto  = null;
 let decisionState= {}; // { pkgKey: { decision, obs, airtableId } }
 let needsTierraGlobal = false;
+let _diasMaxCrono = 0; // last computed diasMax, for fecha restore after re-render
 
 // ─── SECTIONS ─────────────────────────────────────────────────────────────────
 const SECCIONES = [
@@ -1264,7 +1265,7 @@ const ITEM_ZONA = {
   fo:'Foso',ca:'Cabina',pu:'Puertas de hall'
 };
 
-const DEFAULT_PRIO = {"cm04": 1, "cm06": 2, "cm07": 3, "cm08": 4, "re06": 5, "fo10": 6, "fo01": 7, "fo02": 8, "pu08": 9, "pu06": 10, "pu07": 11, "re08": 12, "tc01": 13, "tc08": 14, "tc09": 15, "tc05": 16, "tc06": 17, "tc07": 18, "tc10": 19, "tc11": 20, "tc04": 21, "tc02": 22, "tc03": 23, "re04": 24, "re05": 25, "re01": 26, "re02": 27, "cm02": 28, "cm03": 29, "tc12": 30, "re11": 31, "tc13": 32, "re12": 33, "cm13": 34, "cm14": 35, "re07": 36, "re09": 37, "re10": 38, "fo03": 39, "fo05": 40, "fo06": 41, "cm05": 42, "fo04": 43, "fo07": 44, "fo08": 45, "fo09": 46, "fo11": 47, "ca01": 48, "ca02": 49, "ca03": 50, "ca04": 51, "ca05": 52, "ca06": 53, "pu01": 54, "pu02": 55, "pu03": 56, "pu04": 57, "pu05": 58, "ca07": 59, "ca08": 60, "ca09": 61, "ca10": 62, "ca11": 63, "ca12": 64, "cm09": 65, "cm10": 66, "cm11": 67, "cm12": 68, "re03": 69, "cm01": 99};
+const DEFAULT_PRIO = {"cm04": 1, "cm06": 2, "cm07": 3, "cm08": 4, "re06": 5, "fo10": 6, "fo01": 7, "fo02": 8, "pu08": 9, "pu06": 10, "pu07": 11, "re08": 12, "tc01": 13, "tc08": 14, "tc09": 15, "tc05": 16, "tc06": 17, "tc07": 18, "tc10": 19, "tc11": 20, "tc04": 21, "tc02": 22, "tc03": 23, "re04": 24, "re05": 25, "re01": 26, "re02": 27, "cm02": 28, "cm03": 29, "tc12": 30, "re11": 31, "tc13": 32, "re12": 33, "cm13": 34, "cm14": 35, "re07": 36, "re09": 37, "re10": 38, "fo03": 39, "fo05": 40, "fo06": 41, "cm05": 42, "fo04": 43, "fo07": 44, "fo08": 45, "fo09": 46, "fo11": 47, "ca01": 48, "ca02": 49, "ca03": 50, "ca04": 51, "ca05": 52, "ca06": 53, "pu01": 54, "pu02": 55, "pu03": 56, "pu04": 57, "pu05": 58, "ca07": 59, "ca08": 60, "ca09": 61, "ca10": 62, "ca11": 63, "ca12": 64, "cm09": 65, "cm10": 66, "cm11": 67, "cm12": 68, "re03": 69, "cm01": 70};
 
 function renderCronograma(p){
   const pid = p.id;
@@ -1317,6 +1318,7 @@ function renderCronograma(p){
   const totalMax = itemsList.reduce((s,r)=>s+r.hn[1],0);
   const diasMin = Math.ceil(totalMin/14);
   const diasMax = Math.ceil(totalMax/14);
+  _diasMaxCrono = diasMax; // expose globally for post-render fecha restore
 
   // Group by zone for summary bars only
   const byZona = {};
@@ -1340,12 +1342,13 @@ function renderCronograma(p){
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <span style="font-size:12px;font-weight:500;color:var(--color-text-secondary)">📅 Inicio de obra:</span>
       <input type="date" id="crono-fecha-inicio" style="font-size:13px;padding:5px 10px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:var(--color-background-primary);color:var(--color-text-primary);font-family:var(--font-sans)"
-        onchange="calcFechaFin(${diasMax})">
+        onchange="calcFechaFin(${diasMax}); _updateGenerarBtn()">
       <div id="crono-fecha-fin" style="font-size:12px;color:var(--color-text-secondary)">Selecciona una fecha para ver la finalización estimada</div>
     </div>
-    <button onclick="resetPrioridades()" style="background:rgba(255,255,255,.06);color:var(--n300);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font);white-space:nowrap;transition:all .2s"
-      onmouseover="this.style.background='rgba(255,255,255,.12)'" onmouseout="this.style.background='rgba(255,255,255,.06)'">
-      ↺ Restablecer orden recomendado
+    <button onclick="resetPrioridades()" title="Restablecer orden recomendado"
+      style="background:rgba(255,255,255,.06);color:var(--n300);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:7px 10px;font-size:15px;cursor:pointer;font-family:var(--font);flex-shrink:0;transition:all .2s;line-height:1"
+      onmouseover="this.style.background='rgba(255,255,255,.12)';this.style.color='white'" onmouseout="this.style.background='rgba(255,255,255,.06)';this.style.color='var(--n300)'">
+      ↺
     </button>
   </div>`;
 
@@ -1428,7 +1431,7 @@ function renderCronograma(p){
         <span style="font-size:10px;padding:2px 8px;border-radius:10px;width:100px;text-align:center;flex-shrink:0;${zonaBadgeColor}">${it.zona.split(' ')[0]}</span>
         <span class="pkg-dec-status ${decCls(it.dec)}" style="font-size:10px;padding:2px 6px;width:84px;text-align:center;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${decShort(it.dec)}</span>
         <span style="font-size:12px;font-weight:500;color:var(--color-text-primary);width:76px;text-align:right;flex-shrink:0">${it.hn[0]}–${it.hn[1]}h</span>
-        <span style="font-size:11px;color:var(--color-text-tertiary);flex-shrink:0;cursor:pointer;width:20px;text-align:center" onclick="togCronoRow('${rowId}')">▼</span>
+        <span style="font-size:11px;color:var(--n400);flex-shrink:0;cursor:pointer;width:20px;text-align:center;transition:color .15s" onmouseover="this.style.color='var(--n200)'" onmouseout="this.style.color='var(--n400)'" onclick="togCronoRow('${rowId}')">▼</span>
       </div>
       <div id="${rowId}" style="display:none;padding:8px 4px 14px 46px;background:var(--color-background-secondary)">
         <div style="font-size:11px;font-weight:500;color:var(--color-text-secondary);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Procedimiento</div>
@@ -1441,12 +1444,25 @@ function renderCronograma(p){
   });
   html += `</div>`;
 
-  html += `<div style="font-size:11px;color:var(--color-text-tertiary);text-align:center;padding:10px 0 16px">
+  html += `<div style="font-size:11px;color:var(--color-text-tertiary);text-align:center;padding:10px 0 20px">
     Tiempos en horas-técnico (1 técnico). Con 2 técnicos dividir entre 1.5–1.7. Jornada efectiva en campo = 7h.
-  </div></div>`;
+  </div>
+  <div style="padding:0 0 32px">
+    <button id="btn-generar-seguimiento" onclick="clickGenerarSeguimiento()"
+      style="width:100%;background:linear-gradient(135deg,var(--g700),var(--g500));color:white;border:none;border-radius:12px;padding:16px 24px;font-size:15px;font-weight:600;cursor:pointer;font-family:var(--font);letter-spacing:-.01em;display:flex;align-items:center;justify-content:center;gap:10px;transition:all .2s;box-shadow:0 4px 20px rgba(26,133,59,.25)"
+      onmouseover="hoverGenerar(this)" onmouseout="unhoverGenerar(this)">
+      <span style="font-size:20px">📋</span>
+      Generar Formato de Seguimiento
+    </button>
+    <div id="generar-hint" style="display:none;text-align:center;margin-top:8px;font-size:12px;color:var(--amber)">
+      ⚠ Define la fecha de inicio de obra antes de generar el formato
+    </div>
+  </div>
+  </div>`;
 
   document.getElementById('tab-cronograma').innerHTML = html;
-}
+  // Set locked state if no fecha
+  _updateGenerarBtn();
 
 function togCronoRow(id){
   const el = document.getElementById(id);
@@ -1496,8 +1512,14 @@ async function savePrioridad(itemId, airtableId, value){
     item.rec.fields['Prioridad'] = idx + 1;
   });
 
-  // Re-render immediately (reads from allDecisiones in memory)
+  // Re-render immediately (reads from allDecisiones in memory), preserving fecha de inicio
+  const fechaAntes = document.getElementById('crono-fecha-inicio')?.value || '';
   renderCronograma(curProyecto);
+  if(fechaAntes){
+    const inp = document.getElementById('crono-fecha-inicio');
+    if(inp){ inp.value = fechaAntes; calcFechaFin(_diasMaxCrono); }
+  }
+  _updateGenerarBtn();
 
   // Persist all to Airtable
   const patches = ordered
@@ -1532,7 +1554,13 @@ async function resetPrioridades(){
     return AT_PATCH(TBL_DECISIONES, d.id, { 'Prioridad': prio }).catch(()=>null);
   });
 
+  const fechaGuardada = document.getElementById('crono-fecha-inicio')?.value || '';
   renderCronograma(curProyecto);
+  if(fechaGuardada){
+    const inp = document.getElementById('crono-fecha-inicio');
+    if(inp){ inp.value = fechaGuardada; calcFechaFin(_diasMaxCrono); }
+  }
+  _updateGenerarBtn();
   try {
     await Promise.all(patches);
     toast('Orden recomendado restablecido ✓');
@@ -1664,6 +1692,42 @@ function toast(msg){
   t._t = setTimeout(()=>t.classList.remove('show'), 2400);
 }
 
+
+function _updateGenerarBtn(){
+  const btn  = document.getElementById('btn-generar-seguimiento');
+  const hint = document.getElementById('generar-hint');
+  const fecha = document.getElementById('crono-fecha-inicio')?.value || '';
+  if(!btn) return;
+  if(fecha){
+    btn.style.opacity = '1';
+    btn.style.cursor  = 'pointer';
+    btn.style.filter  = 'none';
+    if(hint) hint.style.display = 'none';
+  } else {
+    btn.style.opacity = '0.45';
+    btn.style.cursor  = 'not-allowed';
+    btn.style.filter  = 'grayscale(40%)';
+    if(hint) hint.style.display = 'none'; // hint only shows on click attempt
+  }
+}
+
+function hoverGenerar(btn){
+  const fecha = document.getElementById('crono-fecha-inicio')?.value || '';
+  if(fecha){ btn.style.transform='translateY(-1px)'; btn.style.boxShadow='0 6px 28px rgba(26,133,59,.35)'; }
+}
+function unhoverGenerar(btn){
+  btn.style.transform=''; btn.style.boxShadow='0 4px 20px rgba(26,133,59,.25)';
+}
+
+function clickGenerarSeguimiento(){
+  const fecha = document.getElementById('crono-fecha-inicio')?.value || '';
+  if(!fecha){
+    const hint = document.getElementById('generar-hint');
+    if(hint){ hint.style.display='block'; setTimeout(()=>hint.style.display='none', 4000); }
+    return;
+  }
+  toast('Módulo de Seguimiento — próximamente disponible');
+}
 
 // ─── TOKEN SCREEN ─────────────────────────────────────────────────────────────
 function showTokenScreen(){
