@@ -890,7 +890,7 @@ function renderItemRows(pkgItemsList, pid, pkgKey){
         <span style="font-family:var(--mono);font-size:10px;color:var(--n500);width:44px;flex-shrink:0">${raw}</span>
         <span style="flex:1;font-size:13px;color:var(--n200)">${nombre}</span>
         <span class="cond-pill ${cond||'none'}" style="font-size:10px">${condText(cond)}</span>
-        <span class="pkg-dec-status ${decCls}" id="badge-${itemDecKey}" style="font-size:10px;padding:2px 8px;white-space:nowrap">${decLabel}</span>
+        <span class="pkg-dec-status ${decCls}" id="badge-${itemDecKey}" style="font-size:10px;padding:2px 8px;white-space:nowrap;display:inline-block;min-width:90px;max-width:130px;overflow:hidden;text-overflow:ellipsis;text-align:center">${decLabel}</span>
         <span style="font-size:10px;color:var(--n600);flex-shrink:0;margin-left:4px">▼</span>
       </div>
       <div id="${dropId}" style="display:none;padding:8px 0 12px 54px">
@@ -926,7 +926,7 @@ function selectItemDec(itemDecKey, value, btn, dropId){
   if(badge){
     badge.textContent = value;
     badge.className = `pkg-dec-status ${clsMap[value]||''}`;
-    badge.style.cssText = 'font-size:10px;padding:2px 8px;white-space:nowrap';
+    badge.style.cssText = 'font-size:10px;padding:2px 8px;white-space:nowrap;display:inline-block;min-width:90px;max-width:130px;overflow:hidden;text-overflow:ellipsis;text-align:center';
   }
   // Close dropdown
   document.getElementById(dropId).style.display = 'none';
@@ -1325,10 +1325,25 @@ function renderCronograma(p){
   const zonaHmax = z => byZona[z].reduce((s,r)=>s+r.hn[1],0);
 
   const fmt = v => Math.round(v);
-  const decCls = d => d==='Vender Nuevo'?'nuevo':d==='Vender de Segunda'?'segunda':d==='Vender Mantenimiento'?'mant':'';
+  const decCls   = d => d==='Vender Nuevo'?'nuevo':d==='Vender de Segunda'?'segunda':d==='Vender Mantenimiento'?'mant':'';
+  const decShort = d => d==='Vender Nuevo'?'Nuevo':d==='Vender de Segunda'?'2da Mano':d==='Vender Mantenimiento'?'Mant.':'—';
   const cronoState = { pid };
 
   let html = `<div style="max-width:860px;margin:0 auto;padding:8px 0">`;
+
+  // ── Fecha de inicio + botón restablecer (al tope) ─────────────────────────
+  html += `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px 16px;margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:12px;font-weight:500;color:var(--color-text-secondary)">📅 Inicio de obra:</span>
+      <input type="date" id="crono-fecha-inicio" style="font-size:13px;padding:5px 10px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:var(--color-background-primary);color:var(--color-text-primary);font-family:var(--font-sans)"
+        onchange="calcFechaFin(${diasMax})">
+      <div id="crono-fecha-fin" style="font-size:12px;color:var(--color-text-secondary)">Selecciona una fecha para ver la finalización estimada</div>
+    </div>
+    <button onclick="resetPrioridades()" style="background:rgba(255,255,255,.06);color:var(--n300);border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font);white-space:nowrap;transition:all .2s"
+      onmouseover="this.style.background='rgba(255,255,255,.12)'" onmouseout="this.style.background='rgba(255,255,255,.06)'">
+      ↺ Restablecer orden recomendado
+    </button>
+  </div>`;
 
   // Summary cards
   html += `<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:20px">
@@ -1406,7 +1421,7 @@ function renderCronograma(p){
         <span style="font-family:var(--font-mono);font-size:10px;color:var(--color-text-secondary);width:44px;flex-shrink:0">${it.id}</span>
         <span style="flex:1;font-size:13px;color:var(--color-text-primary);cursor:pointer" onclick="togCronoRow('${rowId}')">${it.nombre}</span>
         <span style="font-size:10px;padding:2px 7px;border-radius:10px;width:90px;text-align:center;flex-shrink:0;${zonaBadgeColor}">${it.zona.split(' ')[0]}</span>
-        <span class="pkg-dec-status ${decCls(it.dec)}" style="font-size:10px;padding:2px 8px;white-space:nowrap;width:80px;text-align:center;flex-shrink:0">${it.dec}</span>
+        <span class="pkg-dec-status ${decCls(it.dec)}" style="font-size:10px;padding:2px 6px;width:62px;text-align:center;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${decShort(it.dec)}</span>
         <span style="font-size:12px;font-weight:500;color:var(--color-text-primary);width:70px;text-align:right;flex-shrink:0">${it.hn[0]}–${it.hn[1]}h</span>
         <span style="font-size:10px;color:var(--color-text-tertiary);flex-shrink:0;cursor:pointer;width:18px;text-align:center" onclick="togCronoRow('${rowId}')">▼</span>
       </div>
@@ -1421,17 +1436,7 @@ function renderCronograma(p){
   });
   html += `</div>`;
 
-  // Fecha section
-  html += `<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:16px;margin-top:20px;margin-bottom:8px">
-    <div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:var(--color-text-secondary);margin-bottom:12px">Programación de obra</div>
-    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <label style="font-size:13px;color:var(--color-text-secondary)">Fecha de inicio:</label>
-      <input type="date" id="crono-fecha-inicio" style="font-size:13px;padding:6px 10px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:var(--color-background-primary);color:var(--color-text-primary);font-family:var(--font-sans)"
-        onchange="calcFechaFin(${diasMax})">
-      <div id="crono-fecha-fin" style="font-size:13px;color:var(--color-text-secondary)">Selecciona una fecha de inicio</div>
-    </div>
-  </div>
-  <div style="font-size:11px;color:var(--color-text-tertiary);text-align:center;padding:10px 0 16px">
+  html += `<div style="font-size:11px;color:var(--color-text-tertiary);text-align:center;padding:10px 0 16px">
     Tiempos en horas-técnico (1 técnico). Con 2 técnicos dividir entre 1.5–1.7. Jornada efectiva en campo = 7h.
   </div></div>`;
 
@@ -1450,21 +1455,84 @@ function togCronoRow(id){
 }
 
 async function savePrioridad(itemId, airtableId, value){
-  const prio = parseInt(value);
-  if(isNaN(prio) || prio < 1) return;
+  const newPrio = parseInt(value);
+  if(isNaN(newPrio) || newPrio < 1) return;
+
+  const pid = curProyecto?.id;
+  if(!pid) return;
+
+  // All cronograma decision records for this project
+  const relDecs = allDecisiones.filter(d => {
+    if(!Array.isArray(d.fields['Proyectos']) || !d.fields['Proyectos'].includes(pid)) return false;
+    const key = d.fields['ID decisión']||'';
+    const parts = key.split('_');
+    if(parts.length < 3) return false;
+    const dec = d.fields['Decisión']||'';
+    return dec && dec !== 'Pendiente por definir' && dec !== 'No aplica';
+  });
+
+  // Build ordered array using current priority values
+  const ordered = relDecs.map(d => {
+    const key = d.fields['ID decisión']||'';
+    const iid = key.split('_').slice(2).join('_');
+    const curPrio = d.fields['Prioridad'] != null ? d.fields['Prioridad'] : (DEFAULT_PRIO[iid]||99);
+    return { rec: d, iid, curPrio };
+  }).sort((a,b) => a.curPrio - b.curPrio || a.iid.localeCompare(b.iid));
+
+  // Remove moved item and re-insert at target position (1-indexed → 0-indexed)
+  const movedIdx = ordered.findIndex(x => x.rec.id === airtableId);
+  if(movedIdx < 0) return;
+  const [moved] = ordered.splice(movedIdx, 1);
+  const insertAt = Math.max(0, Math.min(newPrio - 1, ordered.length));
+  ordered.splice(insertAt, 0, moved);
+
+  // Assign sequential priorities 1..N
+  ordered.forEach((item, idx) => {
+    item.rec.fields['Prioridad'] = idx + 1;
+  });
+
+  // Re-render immediately (reads from allDecisiones in memory)
+  renderCronograma(curProyecto);
+
+  // Persist all to Airtable
+  const patches = ordered
+    .filter(x => x.rec.id)
+    .map(x => AT_PATCH(TBL_DECISIONES, x.rec.id, { 'Prioridad': x.rec.fields['Prioridad'] }).catch(()=>null));
   try {
-    await AT_PATCH(TBL_DECISIONES, airtableId, { 'Prioridad': prio });
-    // Update allDecisiones in memory
-    const rec = allDecisiones.find(d => d.id === airtableId);
-    if(rec) rec.fields['Prioridad'] = prio;
-    // Re-sort visually
-    const container = document.getElementById('crono-'+itemId)?.closest('[style*="border-bottom:0.5px"]')?.parentNode;
-    // Just show a brief confirmation
-    const inp = document.getElementById('prio-'+itemId);
-    if(inp){ inp.style.borderColor='#1a853b'; setTimeout(()=>inp.style.borderColor='',1500); }
+    await Promise.all(patches);
+    toast('Prioridades actualizadas ✓');
   } catch(e){
-    console.error('Error guardando prioridad:',e);
     toast('Error al guardar prioridad');
+  }
+}
+
+async function resetPrioridades(){
+  const pid = curProyecto?.id;
+  if(!pid) return;
+
+  const relDecs = allDecisiones.filter(d => {
+    if(!Array.isArray(d.fields['Proyectos']) || !d.fields['Proyectos'].includes(pid)) return false;
+    const key = d.fields['ID decisión']||'';
+    const parts = key.split('_');
+    if(parts.length < 3) return false;
+    const dec = d.fields['Decisión']||'';
+    return dec && dec !== 'Pendiente por definir' && dec !== 'No aplica';
+  });
+
+  const patches = relDecs.map(d => {
+    const key = d.fields['ID decisión']||'';
+    const iid = key.split('_').slice(2).join('_');
+    const prio = DEFAULT_PRIO[iid] || 99;
+    d.fields['Prioridad'] = prio;
+    return AT_PATCH(TBL_DECISIONES, d.id, { 'Prioridad': prio }).catch(()=>null);
+  });
+
+  renderCronograma(curProyecto);
+  try {
+    await Promise.all(patches);
+    toast('Orden recomendado restablecido ✓');
+  } catch(e){
+    toast('Error al restablecer prioridades');
   }
 }
 
