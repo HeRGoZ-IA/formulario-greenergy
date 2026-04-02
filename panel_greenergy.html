@@ -325,6 +325,9 @@ const TBL_ITEMS      = 'tblbmQwbOLVtNqLFR';
 const TBL_FOTOS      = 'tblZ2TgL2MrIspuNO';
 const TBL_DECISIONES = 'tblRk1gJ5CadgsiOC';
 const TBL_CATALOGO   = 'tblT7iHQzSLNWPscB';
+const TBL_SEGUIMIENTO_OBRA = 'Seguimiento_Obra';
+const TBL_SEGUIMIENTO_NOVEDADES = 'Seguimiento_Novedades';
+const TBL_SEGUIMIENTO_REUNIONES = 'Seguimiento_Reuniones';
 
 const AT = (tbl, params='') =>
   fetch(`https://api.airtable.com/v0/${BASE_ID}/${tbl}${params}`, {
@@ -1324,34 +1327,84 @@ const ITEM_ZONA = {
 
 const DEFAULT_PRIO = {"cm04": 1, "cm06": 2, "cm07": 3, "cm08": 4, "re06": 5, "fo10": 6, "fo01": 7, "fo02": 8, "pu08": 9, "pu06": 10, "pu07": 11, "re08": 12, "tc01": 13, "tc08": 14, "tc09": 15, "tc05": 16, "tc06": 17, "tc07": 18, "tc10": 19, "tc11": 20, "tc04": 21, "tc02": 22, "tc03": 23, "re04": 24, "re05": 25, "re01": 26, "re02": 27, "cm02": 28, "cm03": 29, "tc12": 30, "re11": 31, "tc13": 32, "re12": 33, "cm13": 34, "cm14": 35, "re07": 36, "re09": 37, "re10": 38, "fo03": 39, "fo05": 40, "fo06": 41, "cm05": 42, "fo04": 43, "fo07": 44, "fo08": 45, "fo09": 46, "fo11": 47, "ca01": 48, "ca02": 49, "ca03": 50, "ca04": 51, "ca05": 52, "ca06": 53, "pu01": 54, "pu02": 55, "pu03": 56, "pu04": 57, "pu05": 58, "ca07": 59, "ca08": 60, "ca09": 61, "ca10": 62, "ca11": 63, "ca12": 64, "cm09": 65, "cm10": 66, "cm11": 67, "cm12": 68, "re03": 69, "cm01": 70};
 
-function renderCronograma(p){
+function getCronogramaItems(p){
   const pid = p.id;
   const f   = p.fields;
   const traccion = (f['Tracción']||f['traccion']||'').toLowerCase();
   const is21 = traccion.includes('2:1');
 
-  // Get items with defined decisions for this project
   const decsMap = {};
-  const decRecordMap = {}; // itemId → airtable record id (for saving priority)
   allDecisiones.filter(d => Array.isArray(d.fields['Proyectos']) && d.fields['Proyectos'].includes(pid))
     .forEach(d => {
-      const key = d.fields['ID decisión']||'';
+      const key = d.fields['ID decisión'] || '';
       const parts = key.split('_');
       if(parts.length >= 3){
+        const pkgKey = parts[1] || '';
         const itemId = parts.slice(2).join('_');
-        const dec = d.fields['Decisión']||'';
+        const dec = d.fields['Decisión'] || '';
         if(dec && dec !== 'Pendiente por definir' && dec !== 'No aplica'){
-          decsMap[itemId] = { dec, prioridad: d.fields['Prioridad']||null, airtableId: d.id };
-          decRecordMap[itemId] = d.id;
+          decsMap[itemId] = {
+            dec,
+            pkgKey,
+            prioridad: d.fields['Prioridad'] || null,
+            airtableId: d.id
+          };
         }
       }
     });
 
+  return Object.keys(decsMap)
+    .map(id => {
+      const db = TAREAS_DB[id];
+      const info = decsMap[id];
+      const dec = info.dec;
+      const isMant = dec === 'Vender Mantenimiento';
+      const hn = db ? (isMant ? db.hm : db.hn) : [1,2];
+      const prio = info.prioridad != null ? info.prioridad : (DEFAULT_PRIO[id] || 99);
+      return {
+        id,
+        dec,
+        pkgKey: info.pkgKey,
+        hn,
+        prio,
+        airtableId: info.airtableId,
+        nombre: ITEM_NAMES[id] || id,
+        zona: ITEM_ZONA[id.substring(0,2)] || '',
+        note: db?.note || '',
+        tareas: db?.t || []
+      };
+    })
+    .sort((a,b) => a.prio - b.prio || a.id.localeCompare(b.id));
+}
 
+function calcularFechaFinCronograma(fechaInicio, diasMax){
+  if(!fechaInicio || !diasMax) return '';
+  const [y,m,d] = fechaInicio.split('-').map(Number);
+  let current = new Date(y,m-1,d);
+  const festivos = new Set([...getFestivosColombia(y), ...getFestivosColombia(y + 1)]);
+  let diasContados = 0;
+  let iteraciones = 0;
 
-  // Build list with hours per item
-  const itemIds = Object.keys(decsMap);
-  if(!itemIds.length){
+  while(diasContados < diasMax && iteraciones < 500){
+    iteraciones++;
+    const dow = current.getDay();
+    const str = current.toISOString().split('T')[0];
+    if(dow !== 0 && dow !== 6 && !festivos.has(str)){
+      diasContados++;
+    }
+    if(diasContados < diasMax) current.setDate(current.getDate() + 1);
+  }
+
+  const yyyy = current.getFullYear();
+  const mm = String(current.getMonth() + 1).padStart(2, '0');
+  const dd = String(current.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function renderCronograma(p){
+  const pid = p.id;
+  const itemsList = getCronogramaItems(p);
+  if(!itemsList.length){
     document.getElementById('tab-cronograma').innerHTML = `
       <div style="text-align:center;padding:40px;color:var(--color-text-secondary);font-size:13px">
         No hay decisiones definidas aún.<br>
@@ -1359,17 +1412,6 @@ function renderCronograma(p){
       </div>`;
     return;
   }
-  const itemsList = itemIds.map(id => {
-    const db = TAREAS_DB[id];
-    const info = decsMap[id];
-    const dec = info.dec;
-    const isMant = dec === 'Vender Mantenimiento';
-    const hn = db ? (isMant ? db.hm : db.hn) : [1,2];
-    const prio = info.prioridad != null ? info.prioridad : (DEFAULT_PRIO[id] || 99);
-    return { id, dec, hn, prio, airtableId: info.airtableId,
-             nombre: ITEM_NAMES[id]||id, zona: ITEM_ZONA[id.substring(0,2)]||'',
-             note: db?.note||'', tareas: db?.t||[] };
-  }).sort((a,b) => a.prio - b.prio || a.id.localeCompare(b.id));
 
   const totalMin = itemsList.reduce((s,r)=>s+r.hn[0],0);
   const totalMax = itemsList.reduce((s,r)=>s+r.hn[1],0);
@@ -1398,8 +1440,8 @@ function renderCronograma(p){
   html += `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:12px 16px;margin-bottom:16px">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <span style="font-size:12px;font-weight:500;color:var(--color-text-secondary)">📅 Inicio de obra:</span>
-      <input type="date" id="crono-fecha-inicio" style="font-size:13px;padding:5px 10px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:var(--color-background-primary);color:var(--color-text-primary);font-family:var(--font-sans)"
-        onchange="calcFechaFin(${diasMax}); _updateGenerarBtn()">
+      <input type="date" id="crono-fecha-inicio" value="${cronogramaFechas[pid] || ''}" style="font-size:13px;padding:5px 10px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:var(--color-background-primary);color:var(--color-text-primary);font-family:var(--font-sans)"
+        onchange="guardarFechaCronograma('${pid}', this.value)">
       <div id="crono-fecha-fin" style="font-size:12px;color:var(--color-text-secondary)">Selecciona una fecha para ver la finalización estimada</div>
     </div>
     <button onclick="resetPrioridades()" title="Restablecer orden recomendado"
@@ -1518,7 +1560,32 @@ function renderCronograma(p){
   </div>`;
 
   document.getElementById('tab-cronograma').innerHTML = html;
+
+  const fechaGuardada = cronogramaFechas[pid] || '';
+  if(fechaGuardada){
+    const inp = document.getElementById('crono-fecha-inicio');
+    if(inp){
+      inp.value = fechaGuardada;
+      calcFechaFin(diasMax);
+    }
+  }
+
   // Set locked state if no fecha
+  _updateGenerarBtn();
+}
+
+function guardarFechaCronograma(pid, value){
+  if(!pid) return;
+
+  if(value){
+    cronogramaFechas[pid] = value;
+  } else {
+    delete cronogramaFechas[pid];
+  }
+
+  localStorage.setItem(CRONO_FECHAS_KEY, JSON.stringify(cronogramaFechas));
+
+  calcFechaFin(_diasMaxCrono);
   _updateGenerarBtn();
 }
 
@@ -1777,14 +1844,77 @@ function unhoverGenerar(btn){
   btn.style.transform=''; btn.style.boxShadow='0 4px 20px rgba(26,133,59,.25)';
 }
 
-function clickGenerarSeguimiento(){
+async function clickGenerarSeguimiento(){
   const fecha = document.getElementById('crono-fecha-inicio')?.value || '';
   if(!fecha){
     const hint = document.getElementById('generar-hint');
     if(hint){ hint.style.display='block'; setTimeout(()=>hint.style.display='none', 4000); }
     return;
   }
-  toast('Módulo de Seguimiento — próximamente disponible');
+
+  if(!curProyecto){
+    toast('No hay proyecto activo');
+    return;
+  }
+
+  const btn = document.getElementById('btn-generar-seguimiento');
+  const itemsList = getCronogramaItems(curProyecto);
+  if(!itemsList.length){
+    toast('No hay ítems listos en el cronograma');
+    return;
+  }
+
+  try {
+    if(btn){
+      btn.disabled = true;
+      btn.style.opacity = '0.65';
+      btn.style.cursor = 'wait';
+    }
+
+    const existentes = await fetchAll(TBL_SEGUIMIENTO_OBRA);
+    const yaExiste = existentes.some(r => Array.isArray(r.fields['Proyecto']) && r.fields['Proyecto'].includes(curProyecto.id));
+    if(yaExiste){
+      toast('Ya existe un seguimiento generado para este proyecto');
+      return;
+    }
+
+    const fechaFin = calcularFechaFinCronograma(fecha, _diasMaxCrono);
+    const codigoProyecto = curProyecto.fields['Código proyecto'] || curProyecto.fields['codigo'] || curProyecto.id.slice(-6);
+
+    const records = itemsList.map((it, idx) => ({
+      fields: {
+        'ID seguimiento': `SEG_${codigoProyecto}_${it.id}`,
+        'Proyecto': [curProyecto.id],
+        'ID ítem': it.id,
+        'Nombre ítem': it.nombre,
+        'Zona': it.zona,
+        'Paquete': it.pkgKey || '',
+        'Prioridad': idx + 1,
+        'Horas estimadas mín': it.hn[0],
+        'Horas estimadas máx': it.hn[1],
+        'Fecha inicio programada': fecha,
+        'Fecha fin estimada': fechaFin || fecha,
+        'Estado ítem': 'Pendiente',
+        'Orden cronograma': idx + 1,
+        'Activo en seguimiento': true
+      }
+    }));
+
+    for(let i = 0; i < records.length; i += 10){
+      await AT_POST(TBL_SEGUIMIENTO_OBRA, { records: records.slice(i, i + 10) });
+    }
+
+    toast('Formato de Seguimiento generado ✓');
+  } catch(e){
+    console.error(e);
+    toast('Error al generar el Seguimiento');
+  } finally {
+    if(btn){
+      btn.disabled = false;
+      btn.style.opacity = '1';
+      btn.style.cursor = 'pointer';
+    }
+  }
 }
 
 // ─── TOKEN SCREEN ─────────────────────────────────────────────────────────────
