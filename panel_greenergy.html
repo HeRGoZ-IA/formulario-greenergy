@@ -366,7 +366,7 @@ let cronogramaFechas = JSON.parse(localStorage.getItem(CRONO_FECHAS_KEY) || '{}'
 const SECCIONES = [
   { key:'cm', label:'Cuarto de máquinas', icon:'⚙️' },
   { key:'tc', label:'Techo de cabina',    icon:'🔧' },
-  { key:'re', label:'Recorrido / hueco',  icon:'↕️' },
+  { key:'re', label:'Recorrido',  icon:'↕️' },
   { key:'fo', label:'Foso',               icon:'⬇️' },
   { key:'ca', label:'Cabina',             icon:'🚪' },
   { key:'pu', label:'Puertas de hall',    icon:'🚪' },
@@ -1324,11 +1324,24 @@ const ITEM_NAMES = {
 };
 
 const ITEM_ZONA = {
-  cm:'Cuarto de máquinas',tc:'Techo de cabina',re:'Recorrido / hueco',
+  cm:'Cuarto de máquinas',tc:'Techo de cabina',re:'Recorrido',
   fo:'Foso',ca:'Cabina',pu:'Puertas de hall'
 };
 
 const DEFAULT_PRIO = {"cm04": 1, "cm06": 2, "cm07": 3, "cm08": 4, "re06": 5, "fo10": 6, "fo01": 7, "fo02": 8, "pu08": 9, "pu06": 10, "pu07": 11, "re08": 12, "tc01": 13, "tc08": 14, "tc09": 15, "tc05": 16, "tc06": 17, "tc07": 18, "tc10": 19, "tc11": 20, "tc04": 21, "tc02": 22, "tc03": 23, "re04": 24, "re05": 25, "re01": 26, "re02": 27, "cm02": 28, "cm03": 29, "tc12": 30, "re11": 31, "tc13": 32, "re12": 33, "cm13": 34, "cm14": 35, "re07": 36, "re09": 37, "re10": 38, "fo03": 39, "fo05": 40, "fo06": 41, "cm05": 42, "fo04": 43, "fo07": 44, "fo08": 45, "fo09": 46, "fo11": 47, "ca01": 48, "ca02": 49, "ca03": 50, "ca04": 51, "ca05": 52, "ca06": 53, "pu01": 54, "pu02": 55, "pu03": 56, "pu04": 57, "pu05": 58, "ca07": 59, "ca08": 60, "ca09": 61, "ca10": 62, "ca11": 63, "ca12": 64, "cm09": 65, "cm10": 66, "cm11": 67, "cm12": 68, "re03": 69, "cm01": 70};
+
+function normalizarZona(zona){
+  const mapa = {
+    'Cuarto de máquinas': 'Cuarto de máquinas',
+    'Techo de cabina': 'Techo de cabina',
+    'Recorrido / hueco': 'Recorrido',
+    'Recorrido': 'Recorrido',
+    'Foso': 'Foso',
+    'Cabina': 'Cabina',
+    'Puertas de hall': 'Puertas de hall'
+  };
+  return mapa[zona] || zona || '';
+}
 
 function getCronogramaItems(p){
   const pid = p.id;
@@ -1372,7 +1385,7 @@ function getCronogramaItems(p){
         prio,
         airtableId: info.airtableId,
         nombre: ITEM_NAMES[id] || id,
-        zona: ITEM_ZONA[id.substring(0,2)] || '',
+        zona: normalizarZona(ITEM_ZONA[id.substring(0,2)] || ''),
         note: db?.note || '',
         tareas: db?.t || []
       };
@@ -1425,7 +1438,7 @@ function renderCronograma(p){
   // Group by zone for summary bars only
   const byZona = {};
   itemsList.forEach(it => {
-    const z = it.zona || 'Otros';
+    const z = normalizarZona(it.zona) || 'Otros';
     if(!byZona[z]) byZona[z] = [];
     byZona[z].push(it);
   });
@@ -1479,7 +1492,7 @@ function renderCronograma(p){
   html += `<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:14px 16px;margin-bottom:20px">
     <div style="font-size:11px;font-weight:500;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">Horas por zona</div>
     <div style="display:flex;flex-direction:column;gap:8px">`;
-  const ZONA_ORDER = ['Cuarto de máquinas','Techo de cabina','Recorrido / hueco','Foso','Cabina','Puertas de hall'];
+  const ZONA_ORDER = ['Cuarto de máquinas','Techo de cabina','Recorrido','Foso','Cabina','Puertas de hall'];
   const allZonas = ZONA_ORDER.filter(z => byZona[z]);
   const maxZH = Math.max(...allZonas.map(z=>zonaHmax(z)));
   allZonas.forEach(z => {
@@ -1513,7 +1526,7 @@ function renderCronograma(p){
     const zonaBadgeColor = {
       'Cuarto de máquinas':'background:#E6F1FB;color:#0C447C',
       'Techo de cabina':'background:#EAF3DE;color:#3B6D11',
-      'Recorrido / hueco':'background:#FAEEDA;color:#633806',
+      'Recorrido':'background:#FAEEDA;color:#633806',
       'Foso':'background:#EEEDFE;color:#3C3489',
       'Cabina':'background:#FBEAF0;color:#72243E',
       'Puertas de hall':'background:#E1F5EE;color:#085041',
@@ -1530,7 +1543,7 @@ function renderCronograma(p){
         </div>
         <span style="font-family:var(--font-mono);font-size:10px;color:var(--color-text-secondary);width:48px;flex-shrink:0">${it.id}</span>
         <span style="flex:1;font-size:13px;color:var(--color-text-primary);cursor:pointer" onclick="togCronoRow('${rowId}')">${it.nombre}</span>
-        <span style="font-size:10px;padding:2px 8px;border-radius:10px;width:100px;text-align:center;flex-shrink:0;${zonaBadgeColor}">${it.zona.split(' ')[0]}</span>
+        <span style="font-size:10px;padding:2px 8px;border-radius:10px;width:140px;text-align:center;flex-shrink:0;${zonaBadgeColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${it.zona}">${it.zona}</span>
         <span class="pkg-dec-status ${decCls(it.dec)}" style="font-size:10px;padding:2px 6px;width:84px;text-align:center;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${decShort(it.dec)}</span>
         <span style="font-size:12px;font-weight:500;color:var(--color-text-primary);width:76px;text-align:right;flex-shrink:0">${it.hn[0]}–${it.hn[1]}h</span>
         <span style="font-size:11px;color:var(--n400);flex-shrink:0;cursor:pointer;width:20px;text-align:center;transition:color .15s" onmouseover="this.style.color='var(--n200)'" onmouseout="this.style.color='var(--n400)'" onclick="togCronoRow('${rowId}')">▼</span>
@@ -1890,7 +1903,7 @@ async function clickGenerarSeguimiento(){
         'Proyecto': [curProyecto.id],
         'ID ítem': it.id,
         'Nombre ítem': it.nombre,
-        'Zona': it.zona,
+        'Zona': normalizarZona(it.zona),
         'Paquete': it.pkgKey || '',
         'Prioridad': idx + 1,
         'Horas estimadas mín': it.hn[0],
