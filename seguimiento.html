@@ -72,6 +72,7 @@
   .nav-btn .nav-ic{font-size:18px;line-height:1}
   .nav-btn.active{background:rgba(34,164,74,.12);color:var(--g200)}
   .chips{display:flex;gap:8px;overflow:auto;padding-bottom:2px;margin-bottom:10px}
+  .sticky-advance{position:sticky;top:-14px;z-index:12;margin:-14px -14px 12px;padding:14px 14px 12px;background:linear-gradient(180deg,var(--n900) 0%,var(--n900) 82%,rgba(13,15,14,.92) 100%);border-bottom:1px solid rgba(255,255,255,.05)}
   .chip{flex:0 0 auto;border-radius:999px;padding:9px 12px;font-size:12px;font-weight:700;background:rgba(255,255,255,.05);color:var(--n300);border:1px solid rgba(255,255,255,.08)}
   .chip.active{background:rgba(34,164,74,.14);color:var(--g200);border-color:rgba(34,164,74,.24)}
   .task-card{padding:0;overflow:hidden}
@@ -88,6 +89,9 @@
   .photo-note{font-size:11px;color:var(--amber);margin-top:8px;line-height:1.4}
   .preview-row{display:flex;gap:8px;overflow:auto;margin-top:8px}
   .preview{width:72px;height:72px;border-radius:12px;object-fit:cover;border:1px solid rgba(255,255,255,.08)}
+  .hidden-file-input{position:absolute;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none}
+  .photo-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .photo-action-btn{min-height:40px;padding:0 14px;border-radius:12px;font-size:13px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:8px}
   .list-card{background:var(--n800);border:1px solid rgba(255,255,255,.07);border-radius:16px;padding:14px;margin-bottom:12px}
   .list-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
   .list-title{font-size:14px;font-weight:700;line-height:1.3}
@@ -127,6 +131,20 @@
   .readonly-block{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:12px;margin-top:10px}
   .readonly-block .label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--n400);margin-bottom:4px}
   .readonly-block .value{font-size:13px;color:var(--n100);line-height:1.45}
+  .richtext{font-size:13px;color:var(--n100);line-height:1.55;word-break:break-word}
+  .richtext > *:first-child{margin-top:0}
+  .richtext > *:last-child{margin-bottom:0}
+  .richtext p{margin:0 0 10px}
+  .richtext h1,.richtext h2,.richtext h3{margin:0 0 10px;color:#fff;line-height:1.2}
+  .richtext h1{font-size:28px;font-weight:700}
+  .richtext h2{font-size:22px;font-weight:700}
+  .richtext h3{font-size:18px;font-weight:700}
+  .richtext ul,.richtext ol{margin:0 0 10px 20px;padding:0}
+  .richtext li{margin:0 0 6px}
+  .richtext blockquote{margin:0 0 10px;padding:0 0 0 12px;border-left:2px solid rgba(255,255,255,.16);color:var(--n200)}
+  .richtext .rt-checkbox{list-style:none;margin-left:-20px;padding-left:20px;position:relative}
+  .richtext .rt-checkbox::before{content:'☐';position:absolute;left:0;color:var(--n300)}
+  .richtext .rt-checkbox.checked::before{content:'☑';color:var(--g300)}
 
 </style>
 </head>
@@ -206,6 +224,44 @@ let state={view:'proyecto',project:null,codigoProyecto:'',projectTitle:'',items:
 const $=id=>document.getElementById(id);
 function showToast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(showToast._timer);showToast._timer=setTimeout(()=>t.classList.remove('show'),2200);}
 function escapeHtml(s){return String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#39;");}
+function inlineRichText(value){return escapeHtml(value).replace(/\*(.+?)\*/g,'<em>$1</em>').replace(/_(.+?)_/g,'<em>$1</em>').replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/__(.+?)__/g,'<strong>$1</strong>').replace(/`([^`]+)`/g,'<code>$1</code>');}
+function renderRichText(value){
+  const raw=String(value??'').replace(/\r\n/g,'\n').trim();
+  if(!raw) return '<div class="richtext"><p>Sin observación registrada</p></div>';
+  const lines=raw.split('\n');
+  const html=[];
+  let i=0;
+  while(i<lines.length){
+    const trimmed=lines[i].trim();
+    if(!trimmed){i++;continue;}
+    const heading=trimmed.match(/^(#{1,3})\s+(.*)$/);
+    if(heading){const level=heading[1].length;html.push(`<h${level}>${inlineRichText(heading[2])}</h${level}>`);i++;continue;}
+    if(trimmed.startsWith('>')){
+      const parts=[];
+      while(i<lines.length && lines[i].trim().startsWith('>')){parts.push(lines[i].trim().replace(/^>\s?/,''));i++;}
+      html.push(`<blockquote>${parts.map(inlineRichText).join('<br>')}</blockquote>`);
+      continue;
+    }
+    if(/^(?:[-*])\s+/.test(trimmed) || /^\d+\.\s+/.test(trimmed) || /^\[(?: |x|X)\]\s+/.test(trimmed)){
+      const ordered=/^\d+\.\s+/.test(trimmed);
+      const tag=ordered?'ol':'ul';
+      const parts=[];
+      while(i<lines.length){
+        const t=lines[i].trim();
+        if(ordered && /^\d+\.\s+/.test(t)){parts.push(`<li>${inlineRichText(t.replace(/^\d+\.\s+/,''))}</li>`);i++;continue;}
+        if(!ordered && /^\[(?: |x|X)\]\s+/.test(t)){const checked=/^\[(?:x|X)\]/.test(t);parts.push(`<li class="rt-checkbox ${checked?'checked':''}">${inlineRichText(t.replace(/^\[(?: |x|X)\]\s+/,''))}</li>`);i++;continue;}
+        if(!ordered && /^(?:[-*])\s+/.test(t)){parts.push(`<li>${inlineRichText(t.replace(/^(?:[-*])\s+/,''))}</li>`);i++;continue;}
+        break;
+      }
+      html.push(`<${tag}>${parts.join('')}</${tag}>`);
+      continue;
+    }
+    const parts=[];
+    while(i<lines.length && lines[i].trim() && !/^(#{1,3})\s+/.test(lines[i].trim()) && !lines[i].trim().startsWith('>') && !/^(?:[-*])\s+/.test(lines[i].trim()) && !/^\d+\.\s+/.test(lines[i].trim()) && !/^\[(?: |x|X)\]\s+/.test(lines[i].trim())){parts.push(inlineRichText(lines[i]));i++;}
+    html.push(`<p>${parts.join('<br>')}</p>`);
+  }
+  return `<div class="richtext">${html.join('')}</div>`;
+}
 function airtableString(s){return String(s??'').replaceAll('"','\"');}
 function nowIsoDate(){return new Date().toISOString();}
 function getParam(name){return new URLSearchParams(window.location.search).get(name);}
@@ -291,7 +347,7 @@ function renderProyectoView(){
   <div style="margin-top:16px"><button class="btn btn-primary btn-block" onclick="setView('avance')">Ir al avance</button></div>`;
 }
 function renderAvanceView(){
-  const htmlTop = `<div class="section-title">Avance</div><div class="chips"><button class="chip ${state.avanceSection==='pendientes'?'active':''}" onclick="setAvanceSection('pendientes')">Pendientes</button><button class="chip ${state.avanceSection==='terminadas'?'active':''}" onclick="setAvanceSection('terminadas')">Terminadas</button><button class="chip ${state.avanceSection==='zonas'?'active':''}" onclick="setAvanceSection('zonas')">Zonas</button></div>`;
+  const htmlTop = `<div class="sticky-advance"><div class="section-title">Avance</div><div class="chips"><button class="chip ${state.avanceSection==='pendientes'?'active':''}" onclick="setAvanceSection('pendientes')">Pendientes</button><button class="chip ${state.avanceSection==='terminadas'?'active':''}" onclick="setAvanceSection('terminadas')">Terminadas</button><button class="chip ${state.avanceSection==='zonas'?'active':''}" onclick="setAvanceSection('zonas')">Zonas</button></div></div>`;
   if(state.avanceSection==='pendientes'){
     const items=getPendingItems();
     return htmlTop + (items.length?items.map(rec=>renderTaskCard(rec,true)).join(''):`<div class="empty-state"><h3>Sin tareas pendientes</h3><div class="helper">Todas las tareas del proyecto ya están terminadas.</div></div>`);
@@ -307,9 +363,9 @@ function renderTaskCard(rec,isEditable){
   const id=getField(rec,['ID ítem'],'—'),name=getField(rec,['Nombre ítem'],'Ítem'),zona=getField(rec,['Zona'],'—'),paquete=getField(rec,['Paquete'],'—'),prioridad=getField(rec,['Prioridad','Orden cronograma'],'—'),estado=getField(rec,['Estado ítem'],'Pendiente'),obs=getField(rec,['Observaciones ejecución'],''),isOpen=state.expandedTaskId===rec.id,photos=getField(rec,['Fotos avance'],[]),termDate=getField(rec,['Fecha terminación'],''),statusClass=itemStatusClass(estado),horas=getTaskHours(rec);
   const previewId=`preview-${rec.id}`;
   if(isEditable){
-    return `<div class="card task-card ${isOpen?'open':''}"><div class="task-head" onclick="toggleTask('${rec.id}')"><div class="task-main"><div class="task-id">${escapeHtml(id)}</div><div class="task-name">${escapeHtml(name)}</div><div class="task-meta"><span class="mini">${escapeHtml(zona)}</span><span class="mini">${escapeHtml(paquete)}</span><span class="mini">Prioridad ${escapeHtml(prioridad)}</span><span class="mini">${escapeHtml(String(horas))} h</span></div></div><div class="task-actions"><span class="badge ${statusClass}">${escapeHtml(estado)}</span><button class="mini-btn btn-primary" onclick="event.stopPropagation(); toggleTask('${rec.id}')">Abrir</button></div></div><div class="task-body"><div class="field"><label>Observación de ejecución</label><textarea class="textarea" id="obs-${rec.id}" placeholder="Escribe una observación corta...">${escapeHtml(obs)}</textarea></div><div class="divider"></div><div class="field"><label>Fotos del avance</label><input type="file" class="input" id="files-${rec.id}" accept="image/*" capture="environment" multiple onchange="previewTaskFiles('${rec.id}')" /><div class="caption" style="margin-top:6px">Máximo permitido: 3 fotos por tarea.</div><div id="${previewId}" class="preview-row"></div>${Array.isArray(photos)&&photos.length?`<div class="caption" style="margin-top:8px">Fotos guardadas actualmente</div><div class="preview-row">${photos.map(ph=>`<img class="preview" src="${ph.url}" alt="foto">`).join('')}</div>`:''}<div class="photo-note">La captura está orientada a uso móvil. Por ahora las fotos se previsualizan localmente y la carga directa a Airtable sigue pendiente.</div></div><div class="actions-row"><button class="btn btn-primary" style="flex:1" onclick="saveAndCompleteTask('${rec.id}')">Terminar</button></div></div></div>`;
+    return `<div class="card task-card ${isOpen?'open':''}"><div class="task-head" onclick="toggleTask('${rec.id}')"><div class="task-main"><div class="task-id">${escapeHtml(id)}</div><div class="task-name">${escapeHtml(name)}</div><div class="task-meta"><span class="mini">${escapeHtml(zona)}</span><span class="mini">${escapeHtml(paquete)}</span><span class="mini">Prioridad ${escapeHtml(prioridad)}</span><span class="mini">${escapeHtml(String(horas))} h</span></div></div><div class="task-actions"><span class="badge ${statusClass}">${escapeHtml(estado)}</span><button class="mini-btn btn-primary" onclick="event.stopPropagation(); toggleTask('${rec.id}')">Abrir</button></div></div><div class="task-body"><div class="field"><label>Observación de ejecución</label><textarea class="textarea" id="obs-${rec.id}" placeholder="Escribe una observación corta...">${escapeHtml(obs)}</textarea></div><div class="divider"></div><div class="field"><label>Fotos del avance</label><input type="file" class="hidden-file-input" id="files-${rec.id}" accept="image/*" multiple onchange="previewTaskFiles('${rec.id}')" /><div class="photo-actions"><button type="button" class="photo-action-btn btn-primary" onclick="openPhotoPicker('${rec.id}','camera')">📷 Tomar fotos</button><button type="button" class="photo-action-btn btn-secondary" onclick="openPhotoPicker('${rec.id}','gallery')">Galería</button></div><div class="caption" style="margin-top:6px">Máximo permitido: 3 fotos por tarea.</div><div id="${previewId}" class="preview-row"></div>${Array.isArray(photos)&&photos.length?`<div class="caption" style="margin-top:8px">Fotos guardadas actualmente</div><div class="preview-row">${photos.map(ph=>`<img class="preview" src="${ph.url}" alt="foto">`).join('')}</div>`:''}<div class="photo-note">La captura queda orientada a celular: primero cámara y, como respaldo, selección desde galería. La carga directa a Airtable sigue pendiente.</div></div><div class="actions-row"><button class="btn btn-primary" style="flex:1" onclick="saveAndCompleteTask('${rec.id}')">Terminar</button></div></div></div>`;
   }
-  return `<div class="card task-card ${isOpen?'open':''}"><div class="task-head" onclick="toggleTask('${rec.id}')"><div class="task-main"><div class="task-id">${escapeHtml(id)}</div><div class="task-name">${escapeHtml(name)}</div><div class="task-meta"><span class="mini">${escapeHtml(zona)}</span><span class="mini">${escapeHtml(paquete)}</span><span class="mini">Prioridad ${escapeHtml(prioridad)}</span><span class="mini">${escapeHtml(String(horas))} h</span></div></div><div class="task-actions"><span class="badge ${statusClass}">${escapeHtml(estado)}</span><button class="mini-btn btn-secondary" onclick="event.stopPropagation(); markTaskPending('${rec.id}')">Reabrir</button></div></div><div class="task-body">${termDate?`<div class="caption" style="margin-bottom:8px">Fecha terminación: ${formatDate(termDate)}</div>`:''}<div class="readonly-block"><div class="label">Observación de ejecución</div><div class="value">${escapeHtml(obs||'Sin observación registrada')}</div></div>${Array.isArray(photos)&&photos.length?`<div class="readonly-block"><div class="label">Fotos guardadas</div><div class="preview-row">${photos.map(ph=>`<img class="preview" src="${ph.url}" alt="foto">`).join('')}</div></div>`:''}</div></div>`;
+  return `<div class="card task-card ${isOpen?'open':''}"><div class="task-head" onclick="toggleTask('${rec.id}')"><div class="task-main"><div class="task-id">${escapeHtml(id)}</div><div class="task-name">${escapeHtml(name)}</div><div class="task-meta"><span class="mini">${escapeHtml(zona)}</span><span class="mini">${escapeHtml(paquete)}</span><span class="mini">Prioridad ${escapeHtml(prioridad)}</span><span class="mini">${escapeHtml(String(horas))} h</span></div></div><div class="task-actions"><span class="badge ${statusClass}">${escapeHtml(estado)}</span><button class="mini-btn btn-secondary" onclick="event.stopPropagation(); markTaskPending('${rec.id}')">Reabrir</button></div></div><div class="task-body">${termDate?`<div class="caption" style="margin-bottom:8px">Fecha terminación: ${formatDate(termDate)}</div>`:''}<div class="readonly-block"><div class="label">Observación de ejecución</div><div class="value">${renderRichText(obs)}</div></div>${Array.isArray(photos)&&photos.length?`<div class="readonly-block"><div class="label">Fotos guardadas</div><div class="preview-row">${photos.map(ph=>`<img class="preview" src="${ph.url}" alt="foto">`).join('')}</div></div>`:''}</div></div>`;
 }
 function renderZoneCard(group){
   const total=group.records.length;
@@ -331,6 +387,14 @@ function setAvanceSection(section){state.avanceSection=section;state.expandedTas
 function toggleTask(id){state.expandedTaskId=(state.expandedTaskId===id)?null:id;renderView();}
 function toggleZone(zona){state.expandedZone=(state.expandedZone===zona)?null:zona;renderView();}
 function openTaskFromZone(id,section){state.avanceSection=section;state.expandedTaskId=id;renderView();setTimeout(()=>{const el=document.getElementById(`obs-${id}`)||document.getElementById(`files-${id}`);if(el&&section==='pendientes') el.scrollIntoView({behavior:'smooth',block:'center'});},30);}
+function openPhotoPicker(id,mode='camera'){
+  const input=document.getElementById(`files-${id}`);
+  if(!input) return;
+  input.value='';
+  if(mode==='camera') input.setAttribute('capture','environment');
+  else input.removeAttribute('capture');
+  input.click();
+}
 function previewTaskFiles(id){
   const input=document.getElementById(`files-${id}`),wrap=document.getElementById(`preview-${id}`);
   if(!input||!wrap) return;
