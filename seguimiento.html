@@ -110,6 +110,24 @@
   .divider{height:1px;background:rgba(255,255,255,.06);margin:14px 0}
   .toast{position:fixed;left:50%;bottom:calc(var(--nav-h) + 12px);transform:translateX(-50%) translateY(8px);background:var(--n700);border:1px solid rgba(255,255,255,.1);color:#fff;padding:10px 14px;border-radius:999px;font-size:13px;font-weight:700;opacity:0;pointer-events:none;transition:.22s;z-index:80;max-width:90vw;text-align:center}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  .zone-card{padding:0;overflow:hidden}
+  .zone-head{display:flex;align-items:center;gap:10px;padding:14px;cursor:pointer}
+  .zone-head:hover{background:rgba(255,255,255,.03)}
+  .zone-main{min-width:0;flex:1}
+  .zone-name{font-size:14px;font-weight:700;line-height:1.2}
+  .zone-sub{font-size:11px;color:var(--n400);margin-top:4px}
+  .zone-body{display:none;border-top:1px solid rgba(255,255,255,.06);padding:10px 12px 12px}
+  .zone-card.open .zone-body{display:block}
+  .task-line{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 4px;border-bottom:1px solid rgba(255,255,255,.05)}
+  .task-line:last-child{border-bottom:none}
+  .task-line-main{min-width:0;flex:1}
+  .task-line-title{font-size:13px;font-weight:700;line-height:1.25}
+  .task-line-sub{font-size:11px;color:var(--n400);margin-top:4px}
+  .readonly-block{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:12px;margin-top:10px}
+  .readonly-block .label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--n400);margin-bottom:4px}
+  .readonly-block .value{font-size:13px;color:var(--n100);line-height:1.45}
+
 </style>
 </head>
 <body>
@@ -184,7 +202,7 @@
 <script>
 const BASE_ID='app6WpUGWDLbyvl7k', TBL_PROYECTOS='tblVly4txK2GjYBid', TBL_SEGUIMIENTO_OBRA='tbla6QjQ1HnsWGdTN', TBL_SEGUIMIENTO_NOVEDADES='tblhQD2qW7stMElpw', TBL_SEGUIMIENTO_REUNIONES='tblOI8Zi9sUAOZS58', TOKEN_KEY='grn_at_token';
 let AT_TOKEN=localStorage.getItem(TOKEN_KEY)||'', pid=null;
-let state={view:'proyecto',project:null,codigoProyecto:'',projectTitle:'',items:[],novedades:[],reuniones:[],avanceFilter:'todas',expandedTaskId:null};
+let state={view:'proyecto',project:null,codigoProyecto:'',projectTitle:'',items:[],novedades:[],reuniones:[],avanceSection:'pendientes',expandedTaskId:null,expandedZone:null};
 const $=id=>document.getElementById(id);
 function showToast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(showToast._timer);showToast._timer=setTimeout(()=>t.classList.remove('show'),2200);}
 function escapeHtml(s){return String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#39;");}
@@ -204,7 +222,7 @@ async function getRecords(tbl,formulas=[]){let out=[],offset='';while(true){cons
 async function patchRecord(tbl,id,fields){return api(`${tbl}/${id}`,{method:'PATCH',body:JSON.stringify({fields})});}
 async function createRecord(tbl,fields){return api(`${tbl}`,{method:'POST',body:JSON.stringify({fields})});}
 function saveTokenAndStart(){const val=$('token-input').value.trim();if(!val){showToast('Pega el token para continuar');return;}localStorage.setItem(TOKEN_KEY,val);AT_TOKEN=val;init();}
-function logout(){localStorage.removeItem(TOKEN_KEY);AT_TOKEN='';state={view:'proyecto',project:null,codigoProyecto:'',projectTitle:'',items:[],novedades:[],reuniones:[],avanceFilter:'todas',expandedTaskId:null};setScreen('screen-login');}
+function logout(){localStorage.removeItem(TOKEN_KEY);AT_TOKEN='';state={view:'proyecto',project:null,codigoProyecto:'',projectTitle:'',items:[],novedades:[],reuniones:[],avanceSection:'pendientes',expandedTaskId:null,expandedZone:null};setScreen('screen-login');}
 function computeProjectTitle(project){return getField(project,['Proyecto','Nombre del proyecto','Nombre proyecto','Nombre'],'')||state.codigoProyecto||'Proyecto';}
 function computeDynamicStatus(){const total=state.items.length,terminadas=state.items.filter(r=>String(getField(r,['Estado ítem'],'')).toLowerCase().includes('term')).length,pendientes=Math.max(0,total-terminadas),fechaInicio=state.items.length?getField(state.items[0],['Fecha inicio programada'],''):'',fechaFin=state.items.length?getField(state.items[0],['Fecha fin estimada'],''):'';if(total>0&&pendientes===0)return 'Proyecto finalizado';if(!fechaInicio||!fechaFin)return 'Sin programación';const hoy=new Date();hoy.setHours(0,0,0,0);const inicio=new Date(fechaInicio);inicio.setHours(0,0,0,0);const fin=new Date(fechaFin);fin.setHours(0,0,0,0);if(hoy<inicio)return 'Proyecto sin iniciar';if(hoy>fin&&pendientes>0)return 'Proyecto atrasado';const diffDias=Math.ceil((fin-hoy)/(1000*60*60*24));if(diffDias<=5&&pendientes>0)return 'Proyecto acercándose a la fecha de entrega';if(hoy>=inicio&&pendientes>0)return 'Proyecto en ejecución';return 'Sin programación';}
 async function loadAll(){pid=getParam('pid');if(!pid){setStateScreen('Link inválido','No se recibió el identificador del proyecto en la URL.',true);return false;}setStateScreen('Cargando proyecto...','Espera un momento mientras se consulta la información del seguimiento.');const project=await getRecord(TBL_PROYECTOS,pid);const codigoProyecto=getField(project,['Código proyecto','Código','ID proyecto'],'');const items=await getRecords(TBL_SEGUIMIENTO_OBRA,[`{Código proyecto}="${airtableString(codigoProyecto)}"`,`FIND("${airtableString(codigoProyecto)}", ARRAYJOIN({Proyecto}))>0`]);const novedades=await getRecords(TBL_SEGUIMIENTO_NOVEDADES,[`FIND("${airtableString(codigoProyecto)}", ARRAYJOIN({Proyecto}))>0`]);const reuniones=await getRecords(TBL_SEGUIMIENTO_REUNIONES,[`FIND("${airtableString(codigoProyecto)}", ARRAYJOIN({Proyecto}))>0`]);state.project=project;state.codigoProyecto=codigoProyecto;state.projectTitle=computeProjectTitle(project);state.items=items.sort((a,b)=>Number(getField(a,['Orden cronograma','Prioridad'],9999))-Number(getField(b,['Orden cronograma','Prioridad'],9999)));state.novedades=novedades.sort((a,b)=>new Date(getField(b,['Fecha novedad','Creado el'],0))-new Date(getField(a,['Fecha novedad','Creado el'],0)));state.reuniones=reuniones.sort((a,b)=>new Date(getField(b,['Fecha reunión','Creado el'],0))-new Date(getField(a,['Fecha reunión','Creado el'],0)));return true;}
@@ -212,22 +230,148 @@ function renderHeader(){const status=computeDynamicStatus();$('header-title').te
 function setView(view){state.view=view;document.querySelectorAll('.nav-btn').forEach(btn=>btn.classList.toggle('active',btn.dataset.view===view));renderView();}
 function goToProjectView(){setView('proyecto');}
 function refreshAll(){init(false);}
-function projectStats(){const total=state.items.length,terminadas=state.items.filter(r=>String(getField(r,['Estado ítem'],'')).toLowerCase().includes('term')).length,pendientes=Math.max(0,total-terminadas),avance=total?Math.round((terminadas/total)*100):0;return {total,terminadas,pendientes,avance};}
-function renderView(){renderHeader();const el=$('content');if(state.view==='proyecto')el.innerHTML=renderProyectoView();else if(state.view==='avance')el.innerHTML=renderAvanceView();else if(state.view==='novedades')el.innerHTML=renderNovedadesView();else el.innerHTML=renderReunionesView();}
-function renderProyectoView(){const p=state.project,{total,terminadas,pendientes,avance}=projectStats(),status=computeDynamicStatus(),[badgeClass,badgeText]=statusBadge(status);return `<div class="section-title">Proyecto</div><div class="card"><div class="kv one"><div class="field"><label>Proyecto</label><div class="value">${escapeHtml(state.projectTitle||'—')}</div></div><div class="field"><label>Código</label><div class="value">${escapeHtml(state.codigoProyecto||'—')}</div></div></div></div><div class="card"><div class="kv one"><div class="field"><label>Cliente</label><div class="value">${escapeHtml(getField(p,['Cliente','Cliente / edificio','Copropiedad'],'—'))}</div></div><div class="field"><label>Ubicación</label><div class="value">${escapeHtml(getField(p,['Ubicación','Dirección','Edificio / torre'],'—'))}</div></div></div></div><div class="card"><div class="kv"><div class="field"><label>Estado</label><div class="value"><span class="badge ${badgeClass}">${escapeHtml(badgeText)}</span></div></div><div class="field"><label>Tareas cargadas</label><div class="value">${escapeHtml(String(total))}</div></div></div></div><div class="card"><div class="kv"><div class="field"><label>Fecha inicio programada</label><div class="value">${formatDate(state.items.length?getField(state.items[0],['Fecha inicio programada'],''):'')}</div></div><div class="field"><label>Fecha fin estimada</label><div class="value">${formatDate(state.items.length?getField(state.items[0],['Fecha fin estimada'],''):'')}</div></div></div></div><div class="section-title">Resumen de avance</div><div class="stats-grid"><div class="stat"><div class="stat-value">${total}</div><div class="stat-label">Tareas totales</div></div><div class="stat"><div class="stat-value">${terminadas}</div><div class="stat-label">Terminadas</div></div><div class="stat"><div class="stat-value">${pendientes}</div><div class="stat-label">Pendientes</div></div><div class="stat"><div class="stat-value">${avance}%</div><div class="stat-label">Avance</div></div></div><div style="margin-top:16px"><button class="btn btn-primary btn-block" onclick="setView('avance')">Ir al avance</button></div>`;}
-function filteredItems(){if(state.avanceFilter==='pendientes')return state.items.filter(r=>!String(getField(r,['Estado ítem'],'')).toLowerCase().includes('term'));if(state.avanceFilter==='terminadas')return state.items.filter(r=>String(getField(r,['Estado ítem'],'')).toLowerCase().includes('term'));return state.items;}
-function renderAvanceView(){const items=filteredItems();return `<div class="section-title">Avance</div><div class="chips"><button class="chip ${state.avanceFilter==='todas'?'active':''}" onclick="setAvanceFilter('todas')">Todas</button><button class="chip ${state.avanceFilter==='pendientes'?'active':''}" onclick="setAvanceFilter('pendientes')">Pendientes</button><button class="chip ${state.avanceFilter==='terminadas'?'active':''}" onclick="setAvanceFilter('terminadas')">Terminadas</button></div>${items.length?items.map(renderTaskCard).join(''):`<div class="empty-state"><h3>Sin tareas</h3><div class="helper">Este proyecto todavía no tiene ítems de seguimiento generados.</div></div>`}`;}
-function renderTaskCard(rec){const id=getField(rec,['ID ítem'],'—'),name=getField(rec,['Nombre ítem'],'Ítem'),zona=getField(rec,['Zona'],'—'),paquete=getField(rec,['Paquete'],'—'),prioridad=getField(rec,['Prioridad','Orden cronograma'],'—'),estado=getField(rec,['Estado ítem'],'Pendiente'),obs=getField(rec,['Observaciones ejecución'],''),isOpen=state.expandedTaskId===rec.id,photos=getField(rec,['Fotos avance'],[]),termDate=getField(rec,['Fecha terminación'],''),statusClass=itemStatusClass(estado);return `<div class="card task-card ${isOpen?'open':''}"><div class="task-head" onclick="toggleTask('${rec.id}')"><div class="task-main"><div class="task-id">${escapeHtml(id)}</div><div class="task-name">${escapeHtml(name)}</div><div class="task-meta"><span class="mini">${escapeHtml(zona)}</span><span class="mini">${escapeHtml(paquete)}</span><span class="mini">Prioridad ${escapeHtml(prioridad)}</span></div></div><div class="task-actions"><span class="badge ${statusClass}">${escapeHtml(estado)}</span>${String(estado).toLowerCase().includes('term')?`<button class="mini-btn btn-secondary" onclick="event.stopPropagation(); markTaskPending('${rec.id}')">Reabrir</button>`:`<button class="mini-btn btn-primary" onclick="event.stopPropagation(); markTaskDone('${rec.id}')">Terminar</button>`}</div></div><div class="task-body">${termDate?`<div class="caption" style="margin-bottom:8px">Fecha terminación: ${formatDate(termDate)}</div>`:''}<div class="field"><label>Observación de ejecución</label><textarea class="textarea" id="obs-${rec.id}" placeholder="Escribe una observación corta...">${escapeHtml(obs)}</textarea></div><div class="divider"></div><div class="field"><label>Fotos del avance</label><input type="file" class="input" id="files-${rec.id}" accept="image/*" multiple onchange="previewTaskFiles('${rec.id}')" /><div class="caption" style="margin-top:6px">Máximo recomendado: 3 fotos por tarea.</div><div id="preview-${rec.id}" class="preview-row"></div>${Array.isArray(photos)&&photos.length?`<div class="caption" style="margin-top:8px">Fotos guardadas actualmente</div><div class="preview-row">${photos.map(ph=>`<img class="preview" src="${ph.url}" alt="foto">`).join('')}</div>`:''}<div class="photo-note">En esta V2 las fotos seleccionadas se previsualizan localmente. La carga directa al campo adjunto de Airtable queda para la siguiente iteración.</div></div><div class="actions-row"><button class="btn btn-primary" style="flex:1" onclick="saveTask('${rec.id}')">Guardar</button><button class="btn btn-secondary" style="flex:1" onclick="toggleTask('${rec.id}')">Cancelar</button></div></div></div>`;}
+function getTaskHours(rec){
+  const raw = Number(getField(rec,['Horas estimadas máx','Horas estimadas max','Horas estimadas mín','Horas estimadas min'],0));
+  return Number.isFinite(raw) ? raw : 0;
+}
+function getPendingItems(){return state.items.filter(r=>!String(getField(r,['Estado ítem'],'')).toLowerCase().includes('term'));}
+function getCompletedItems(){return state.items.filter(r=>String(getField(r,['Estado ítem'],'')).toLowerCase().includes('term'));}
+function projectStats(){
+  const total=state.items.length;
+  const terminadas=getCompletedItems().length;
+  const pendientes=Math.max(0,total-terminadas);
+  const horasTotales=state.items.reduce((s,r)=>s+getTaskHours(r),0);
+  const horasTerminadas=getCompletedItems().reduce((s,r)=>s+getTaskHours(r),0);
+  const horasPendientes=Math.max(0,horasTotales-horasTerminadas);
+  const avance=horasTotales?Math.round((horasTerminadas/horasTotales)*100):0;
+  return {total,terminadas,pendientes,avance,horasTotales,horasTerminadas,horasPendientes};
+}
+function groupItemsByZone(items=state.items){
+  const out={};
+  items.forEach(rec=>{
+    const zona=getField(rec,['Zona'],'Sin zona')||'Sin zona';
+    if(!out[zona]) out[zona]=[];
+    out[zona].push(rec);
+  });
+  const preferred=['Cuarto de máquinas','Techo de cabina','Recorrido','Foso','Cabina','Puertas de hall','Sin zona'];
+  return Object.entries(out)
+    .sort((a,b)=>{
+      const ia=preferred.indexOf(a[0]);
+      const ib=preferred.indexOf(b[0]);
+      if(ia===-1&&ib===-1) return a[0].localeCompare(b[0]);
+      if(ia===-1) return 1;
+      if(ib===-1) return -1;
+      return ia-ib;
+    })
+    .map(([zona,records])=>({zona,records:records.sort((a,b)=>Number(getField(a,['Orden cronograma','Prioridad'],9999))-Number(getField(b,['Orden cronograma','Prioridad'],9999)))}));
+}
+function renderView(){
+  renderHeader();
+  const el=$('content');
+  if(state.view==='proyecto') el.innerHTML=renderProyectoView();
+  else if(state.view==='avance') el.innerHTML=renderAvanceView();
+  else if(state.view==='novedades') el.innerHTML=renderNovedadesView();
+  else el.innerHTML=renderReunionesView();
+}
+function renderProyectoView(){
+  const p=state.project,{total,terminadas,pendientes,avance,horasTotales,horasTerminadas,horasPendientes}=projectStats(),status=computeDynamicStatus(),[badgeClass,badgeText]=statusBadge(status);
+  return `<div class="section-title">Proyecto</div>
+  <div class="card"><div class="kv one"><div class="field"><label>Código del Proyecto</label><div class="value">${escapeHtml(state.codigoProyecto||'—')}</div></div></div></div>
+  <div class="card"><div class="kv one"><div class="field"><label>Cliente</label><div class="value">${escapeHtml(getField(p,['Cliente','Cliente / edificio','Copropiedad'],'—'))}</div></div><div class="field"><label>Ubicación</label><div class="value">${escapeHtml(getField(p,['Ubicación','Dirección','Edificio / torre'],'—'))}</div></div></div></div>
+  <div class="card"><div class="kv"><div class="field"><label>Estado</label><div class="value"><span class="badge ${badgeClass}">${escapeHtml(badgeText)}</span></div></div><div class="field"><label>Tareas cargadas</label><div class="value">${escapeHtml(String(total))}</div></div></div></div>
+  <div class="card"><div class="kv"><div class="field"><label>Horas completadas</label><div class="value">${escapeHtml(String(horasTerminadas))} h</div></div><div class="field"><label>Horas totales</label><div class="value">${escapeHtml(String(horasTotales))} h</div></div></div></div>
+  <div class="card"><div class="kv"><div class="field"><label>Fecha inicio programada</label><div class="value">${formatDate(state.items.length?getField(state.items[0],['Fecha inicio programada'],''):'')}</div></div><div class="field"><label>Fecha fin estimada</label><div class="value">${formatDate(state.items.length?getField(state.items[0],['Fecha fin estimada'],''):'')}</div></div></div></div>
+  <div class="section-title">Resumen de avance</div>
+  <div class="stats-grid">
+    <div class="stat"><div class="stat-value">${total}</div><div class="stat-label">Tareas totales</div></div>
+    <div class="stat"><div class="stat-value">${terminadas}</div><div class="stat-label">Terminadas</div></div>
+    <div class="stat"><div class="stat-value">${horasPendientes}</div><div class="stat-label">Horas pendientes</div></div>
+    <div class="stat"><div class="stat-value">${avance}%</div><div class="stat-label">Avance por horas</div></div>
+  </div>
+  <div style="margin-top:16px"><button class="btn btn-primary btn-block" onclick="setView('avance')">Ir al avance</button></div>`;
+}
+function renderAvanceView(){
+  const htmlTop = `<div class="section-title">Avance</div><div class="chips"><button class="chip ${state.avanceSection==='pendientes'?'active':''}" onclick="setAvanceSection('pendientes')">Pendientes</button><button class="chip ${state.avanceSection==='terminadas'?'active':''}" onclick="setAvanceSection('terminadas')">Terminadas</button><button class="chip ${state.avanceSection==='zonas'?'active':''}" onclick="setAvanceSection('zonas')">Zonas</button></div>`;
+  if(state.avanceSection==='pendientes'){
+    const items=getPendingItems();
+    return htmlTop + (items.length?items.map(rec=>renderTaskCard(rec,true)).join(''):`<div class="empty-state"><h3>Sin tareas pendientes</h3><div class="helper">Todas las tareas del proyecto ya están terminadas.</div></div>`);
+  }
+  if(state.avanceSection==='terminadas'){
+    const items=getCompletedItems();
+    return htmlTop + (items.length?items.map(rec=>renderTaskCard(rec,false)).join(''):`<div class="empty-state"><h3>Sin tareas terminadas</h3><div class="helper">Todavía no hay tareas cerradas en este proyecto.</div></div>`);
+  }
+  const zones=groupItemsByZone();
+  return htmlTop + (zones.length?zones.map(renderZoneCard).join(''):`<div class="empty-state"><h3>Sin zonas</h3><div class="helper">Este proyecto todavía no tiene ítems de seguimiento generados.</div></div>`);
+}
+function renderTaskCard(rec,isEditable){
+  const id=getField(rec,['ID ítem'],'—'),name=getField(rec,['Nombre ítem'],'Ítem'),zona=getField(rec,['Zona'],'—'),paquete=getField(rec,['Paquete'],'—'),prioridad=getField(rec,['Prioridad','Orden cronograma'],'—'),estado=getField(rec,['Estado ítem'],'Pendiente'),obs=getField(rec,['Observaciones ejecución'],''),isOpen=state.expandedTaskId===rec.id,photos=getField(rec,['Fotos avance'],[]),termDate=getField(rec,['Fecha terminación'],''),statusClass=itemStatusClass(estado),horas=getTaskHours(rec);
+  const previewId=`preview-${rec.id}`;
+  if(isEditable){
+    return `<div class="card task-card ${isOpen?'open':''}"><div class="task-head" onclick="toggleTask('${rec.id}')"><div class="task-main"><div class="task-id">${escapeHtml(id)}</div><div class="task-name">${escapeHtml(name)}</div><div class="task-meta"><span class="mini">${escapeHtml(zona)}</span><span class="mini">${escapeHtml(paquete)}</span><span class="mini">Prioridad ${escapeHtml(prioridad)}</span><span class="mini">${escapeHtml(String(horas))} h</span></div></div><div class="task-actions"><span class="badge ${statusClass}">${escapeHtml(estado)}</span><button class="mini-btn btn-primary" onclick="event.stopPropagation(); toggleTask('${rec.id}')">Abrir</button></div></div><div class="task-body"><div class="field"><label>Observación de ejecución</label><textarea class="textarea" id="obs-${rec.id}" placeholder="Escribe una observación corta...">${escapeHtml(obs)}</textarea></div><div class="divider"></div><div class="field"><label>Fotos del avance</label><input type="file" class="input" id="files-${rec.id}" accept="image/*" capture="environment" multiple onchange="previewTaskFiles('${rec.id}')" /><div class="caption" style="margin-top:6px">Máximo permitido: 3 fotos por tarea.</div><div id="${previewId}" class="preview-row"></div>${Array.isArray(photos)&&photos.length?`<div class="caption" style="margin-top:8px">Fotos guardadas actualmente</div><div class="preview-row">${photos.map(ph=>`<img class="preview" src="${ph.url}" alt="foto">`).join('')}</div>`:''}<div class="photo-note">La captura está orientada a uso móvil. Por ahora las fotos se previsualizan localmente y la carga directa a Airtable sigue pendiente.</div></div><div class="actions-row"><button class="btn btn-primary" style="flex:1" onclick="saveAndCompleteTask('${rec.id}')">Terminar</button></div></div></div>`;
+  }
+  return `<div class="card task-card ${isOpen?'open':''}"><div class="task-head" onclick="toggleTask('${rec.id}')"><div class="task-main"><div class="task-id">${escapeHtml(id)}</div><div class="task-name">${escapeHtml(name)}</div><div class="task-meta"><span class="mini">${escapeHtml(zona)}</span><span class="mini">${escapeHtml(paquete)}</span><span class="mini">Prioridad ${escapeHtml(prioridad)}</span><span class="mini">${escapeHtml(String(horas))} h</span></div></div><div class="task-actions"><span class="badge ${statusClass}">${escapeHtml(estado)}</span><button class="mini-btn btn-secondary" onclick="event.stopPropagation(); markTaskPending('${rec.id}')">Reabrir</button></div></div><div class="task-body">${termDate?`<div class="caption" style="margin-bottom:8px">Fecha terminación: ${formatDate(termDate)}</div>`:''}<div class="readonly-block"><div class="label">Observación de ejecución</div><div class="value">${escapeHtml(obs||'Sin observación registrada')}</div></div>${Array.isArray(photos)&&photos.length?`<div class="readonly-block"><div class="label">Fotos guardadas</div><div class="preview-row">${photos.map(ph=>`<img class="preview" src="${ph.url}" alt="foto">`).join('')}</div></div>`:''}</div></div>`;
+}
+function renderZoneCard(group){
+  const total=group.records.length;
+  const terminadas=group.records.filter(r=>String(getField(r,['Estado ítem'],'')).toLowerCase().includes('term')).length;
+  const isComplete=total>0 && terminadas===total;
+  const isOpen=state.expandedZone===group.zona;
+  return `<div class="card zone-card ${isOpen?'open':''}"><div class="zone-head" onclick="toggleZone('${escapeHtml(group.zona).replace(/&#39;/g,"\'")}')"><div class="zone-main"><div class="zone-name">${escapeHtml(group.zona)}</div><div class="zone-sub">${terminadas}/${total} tareas terminadas</div></div><span class="badge ${isComplete?'badge-green':'badge-blue'}">${isComplete?'Completo':`${terminadas}/${total}`}</span></div><div class="zone-body">${group.records.map(rec=>renderZoneTaskLine(rec)).join('')}</div></div>`;
+}
+function renderZoneTaskLine(rec){
+  const estado=getField(rec,['Estado ítem'],'Pendiente');
+  const isTerm=String(estado).toLowerCase().includes('term');
+  return `<div class="task-line" onclick="openTaskFromZone('${rec.id}','${isTerm?'terminadas':'pendientes'}')"><div class="task-line-main"><div class="task-line-title">${escapeHtml(getField(rec,['Nombre ítem'],'Ítem'))}</div><div class="task-line-sub">${escapeHtml(getField(rec,['ID ítem'],'—'))} · ${escapeHtml(String(getTaskHours(rec)))} h</div></div><span class="badge ${isTerm?'badge-green':'badge-amber'}">${escapeHtml(estado)}</span></div>`;
+}
 function renderNovedadesView(){return `<div class="section-title">Novedades</div><div style="margin-bottom:12px"><button class="btn btn-primary btn-block" onclick="openNovedadForm()">+ Nueva novedad</button></div>${state.novedades.length?state.novedades.map(renderNovedadCard).join(''):`<div class="empty-state"><h3>Sin novedades</h3><div class="helper">Todavía no se han registrado novedades en este proyecto.</div></div>`}`;}
 function renderNovedadCard(rec){const tipo=getField(rec,['Tipo novedad'],'—'),fecha=formatDate(getField(rec,['Fecha novedad','Creado el'],'')),estado=getField(rec,['Estado novedad'],'Abierta'),impacto=getField(rec,['Impacto'],'—'),itemRel=getField(rec,['Ítem relacionado'],[]),itemLabel=Array.isArray(itemRel)&&itemRel.length?itemRel.join(', '):'General',[badgeClass]=statusBadge(estado);return `<div class="list-card" onclick="openNovedadForm('${rec.id}')"><div class="list-top"><div><div class="list-title">${escapeHtml(tipo)}</div><div class="list-sub">${escapeHtml(fecha)} · ${escapeHtml(itemLabel)}</div></div><span class="badge ${badgeClass}">${escapeHtml(estado)}</span></div><div class="list-meta"><span class="badge badge-gray">${escapeHtml(impacto)}</span></div></div>`;}
 function renderReunionesView(){return `<div class="section-title">Reuniones</div><div style="margin-bottom:12px"><button class="btn btn-primary btn-block" onclick="openReunionForm()">+ Nueva reunión</button></div>${state.reuniones.length?state.reuniones.map(renderReunionCard).join(''):`<div class="empty-state"><h3>Sin reuniones</h3><div class="helper">Todavía no se han registrado reuniones para este proyecto.</div></div>`}`;}
 function renderReunionCard(rec){const tipo=getField(rec,['Tipo reunión'],'—'),fecha=formatDate(getField(rec,['Fecha reunión','Creado el'],'')),responsable=getField(rec,['Responsable'],'—'),temas=getField(rec,['Temas tratados'],'');return `<div class="list-card" onclick="openReunionForm('${rec.id}')"><div class="list-top"><div><div class="list-title">${escapeHtml(tipo)}</div><div class="list-sub">${escapeHtml(fecha)} · Responsable: ${escapeHtml(responsable)}</div></div></div><div class="list-sub" style="margin-top:10px">${escapeHtml((temas||'').slice(0,100)||'Sin tema registrado')}</div></div>`;}
-function setAvanceFilter(filter){state.avanceFilter=filter;renderView();}
+function setAvanceSection(section){state.avanceSection=section;state.expandedTaskId=null;renderView();}
 function toggleTask(id){state.expandedTaskId=(state.expandedTaskId===id)?null:id;renderView();}
-function previewTaskFiles(id){const input=document.getElementById(`files-${id}`),wrap=document.getElementById(`preview-${id}`);if(!input||!wrap)return;wrap.innerHTML='';[...(input.files||[])].slice(0,3).forEach(file=>{const reader=new FileReader();reader.onload=e=>{const img=document.createElement('img');img.className='preview';img.src=e.target.result;wrap.appendChild(img);};reader.readAsDataURL(file);});}
-async function markTaskDone(id){try{await patchRecord(TBL_SEGUIMIENTO_OBRA,id,{'Estado ítem':'Terminado','Fecha terminación':nowIsoDate()});showToast('Tarea marcada como terminada');await init(false);state.view='avance';state.expandedTaskId=id;renderView();}catch(err){console.error(err);showToast(err.message||'No se pudo actualizar la tarea');}}
-async function markTaskPending(id){try{await patchRecord(TBL_SEGUIMIENTO_OBRA,id,{'Estado ítem':'Pendiente','Fecha terminación':null});showToast('Tarea reabierta');await init(false);state.view='avance';state.expandedTaskId=id;renderView();}catch(err){console.error(err);showToast(err.message||'No se pudo reabrir la tarea');}}
-async function saveTask(id){try{const obs=document.getElementById(`obs-${id}`)?.value||'';await patchRecord(TBL_SEGUIMIENTO_OBRA,id,{'Observaciones ejecución':obs});showToast('Avance guardado');await init(false);state.view='avance';state.expandedTaskId=id;renderView();}catch(err){console.error(err);showToast(err.message||'No se pudo guardar');}}
+function toggleZone(zona){state.expandedZone=(state.expandedZone===zona)?null:zona;renderView();}
+function openTaskFromZone(id,section){state.avanceSection=section;state.expandedTaskId=id;renderView();setTimeout(()=>{const el=document.getElementById(`obs-${id}`)||document.getElementById(`files-${id}`);if(el&&section==='pendientes') el.scrollIntoView({behavior:'smooth',block:'center'});},30);}
+function previewTaskFiles(id){
+  const input=document.getElementById(`files-${id}`),wrap=document.getElementById(`preview-${id}`);
+  if(!input||!wrap) return;
+  const files=Array.from(input.files||[]);
+  if(files.length>3){
+    showToast('Máximo 3 fotos por tarea');
+    input.value='';
+    wrap.innerHTML='';
+    return;
+  }
+  wrap.innerHTML='';
+  files.forEach(file=>{
+    const reader=new FileReader();
+    reader.onload=e=>{const img=document.createElement('img');img.className='preview';img.src=e.target.result;wrap.appendChild(img);};
+    reader.readAsDataURL(file);
+  });
+}
+async function markTaskDone(id){
+  try{await patchRecord(TBL_SEGUIMIENTO_OBRA,id,{'Estado ítem':'Terminado','Fecha terminación':nowIsoDate()});showToast('Tarea marcada como terminada');await init(false);state.view='avance';state.avanceSection='terminadas';state.expandedTaskId=id;renderView();}
+  catch(err){console.error(err);showToast(err.message||'No se pudo actualizar la tarea');}
+}
+async function markTaskPending(id){
+  try{await patchRecord(TBL_SEGUIMIENTO_OBRA,id,{'Estado ítem':'Pendiente','Fecha terminación':null});showToast('Tarea reabierta');await init(false);state.view='avance';state.avanceSection='pendientes';state.expandedTaskId=id;renderView();}
+  catch(err){console.error(err);showToast(err.message||'No se pudo reabrir la tarea');}
+}
+async function saveAndCompleteTask(id){
+  try{
+    const obs=(document.getElementById(`obs-${id}`)?.value||'').trim();
+    if(!obs){showToast('Escribe una observación antes de terminar');return;}
+    const input=document.getElementById(`files-${id}`);
+    const files=Array.from(input?.files||[]);
+    if(files.length>3){showToast('Máximo 3 fotos por tarea');return;}
+    await patchRecord(TBL_SEGUIMIENTO_OBRA,id,{'Observaciones ejecución':obs,'Estado ítem':'Terminado','Fecha terminación':nowIsoDate()});
+    showToast(files.length?'Tarea terminada. Fotos pendientes de integración con Airtable':'Tarea terminada');
+    await init(false);
+    state.view='avance';
+    state.avanceSection='terminadas';
+    state.expandedTaskId=id;
+    renderView();
+  }catch(err){console.error(err);showToast(err.message||'No se pudo terminar la tarea');}
+}
 function openSheet(title,html){$('sheet-title').textContent=title;$('sheet-body').innerHTML=html;$('sheet-overlay').classList.add('open');}
 function closeSheet(){$('sheet-overlay').classList.remove('open');$('sheet-body').innerHTML='';}
 function itemOptions(selectedValue=''){return state.items.map(rec=>{const val=rec.id,label=`${getField(rec,['ID ítem'],'')} — ${getField(rec,['Nombre ítem'],'Ítem')}`;return `<option value="${val}" ${val===selectedValue?'selected':''}>${escapeHtml(label)}</option>`;}).join('');}
