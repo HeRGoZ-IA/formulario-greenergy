@@ -359,6 +359,9 @@ let decisionState= {}; // { pkgKey: { decision, obs, airtableId } }
 let needsTierraGlobal = false;
 let _diasMaxCrono = 0; // last computed diasMax, for fecha restore after re-render
 
+const CRONO_FECHAS_KEY = 'grn_crono_fechas_inicio';
+let cronogramaFechas = JSON.parse(localStorage.getItem(CRONO_FECHAS_KEY) || '{}');
+
 // ─── SECTIONS ─────────────────────────────────────────────────────────────────
 const SECCIONES = [
   { key:'cm', label:'Cuarto de máquinas', icon:'⚙️' },
