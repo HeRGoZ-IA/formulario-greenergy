@@ -44,6 +44,8 @@ button{font-family:var(--font);cursor:pointer;border:none}
 .topbar-right{display:flex;align-items:center;gap:10px}
 .btn-refresh{background:rgba(255,255,255,.06);color:var(--n300);border:1px solid rgba(255,255,255,.08);border-radius:var(--r);padding:6px 12px;font-size:12px;font-weight:500;transition:all .2s}
 .btn-refresh:hover{background:rgba(255,255,255,.1);color:white}
+.btn-logout{background:rgba(239,68,68,.12);color:#fca5a5;border:1px solid rgba(239,68,68,.22);border-radius:var(--r);padding:6px 12px;font-size:12px;font-weight:500;transition:all .2s}
+.btn-logout:hover{background:rgba(239,68,68,.18);color:white}
 .content{flex:1;overflow:hidden;display:flex}
 
 /* ── SCREENS ── */
@@ -252,6 +254,7 @@ input[type=number] { -moz-appearance:textfield; }
     </div>
     <div class="topbar-right">
       <button class="btn-refresh" onclick="refreshData()">↻ Actualizar</button>
+      <button class="btn-logout" onclick="logoutPanel()">Salir</button>
     </div>
   </div>
   <div class="content">
@@ -1888,39 +1891,56 @@ async function clickGenerarSeguimiento(){
     }
 
     const existentes = await fetchAll(TBL_SEGUIMIENTO_OBRA);
-    const yaExiste = existentes.some(r => Array.isArray(r.fields['Proyecto']) && r.fields['Proyecto'].includes(curProyecto.id));
-    if(yaExiste){
-      toast('Ya existe un seguimiento generado para este proyecto');
-      return;
-    }
+    const existentesProyecto = existentes.filter(r =>
+      Array.isArray(r.fields['Proyecto']) && r.fields['Proyecto'].includes(curProyecto.id)
+    );
+
+    const existentesPorItem = new Set(
+      existentesProyecto
+        .map(r => (r.fields['ID ítem'] || '').trim())
+        .filter(Boolean)
+    );
 
     const fechaFin = calcularFechaFinCronograma(fecha, _diasMaxCrono);
     const codigoProyecto = curProyecto.fields['Código proyecto'] || curProyecto.fields['codigo'] || curProyecto.id.slice(-6);
 
-    const records = itemsList.map((it, idx) => ({
-      fields: {
-        'ID seguimiento': `SEG_${codigoProyecto}_${it.id}`,
-        'Proyecto': [curProyecto.id],
-        'ID ítem': it.id,
-        'Nombre ítem': it.nombre,
-        'Zona': normalizarZona(it.zona),
-        'Paquete': it.pkgKey || '',
-        'Prioridad': idx + 1,
-        'Horas estimadas mín': it.hn[0],
-        'Horas estimadas máx': it.hn[1],
-        'Fecha inicio programada': fecha,
-        'Fecha fin estimada': fechaFin || fecha,
-        'Estado ítem': 'Pendiente',
-        'Orden cronograma': idx + 1,
-        'Activo en seguimiento': true
-      }
-    }));
+    const records = [];
+    itemsList.forEach((it, idx) => {
+      if(existentesPorItem.has(it.id)) return;
+      records.push({
+        fields: {
+          'ID seguimiento': `SEG_${codigoProyecto}_${it.id}`,
+          'Proyecto': [curProyecto.id],
+          'ID ítem': it.id,
+          'Nombre ítem': it.nombre,
+          'Zona': normalizarZona(it.zona),
+          'Paquete': it.pkgKey || '',
+          'Prioridad': idx + 1,
+          'Horas estimadas mín': it.hn[0],
+          'Horas estimadas máx': it.hn[1],
+          'Fecha inicio programada': fecha,
+          'Fecha fin estimada': fechaFin || fecha,
+          'Estado ítem': 'Pendiente',
+          'Orden cronograma': idx + 1,
+          'Activo en seguimiento': true
+        }
+      });
+    });
+
+    if(!records.length){
+      toast('Seguimiento ya está completo ✓');
+      return;
+    }
 
     for(let i = 0; i < records.length; i += 10){
       await AT_POST(TBL_SEGUIMIENTO_OBRA, { records: records.slice(i, i + 10) });
     }
 
-    toast('Formato de Seguimiento generado ✓');
+    if(existentesProyecto.length){
+      toast(`Se repusieron ${records.length} ítem(s) faltante(s) ✓`);
+    } else {
+      toast(`Formato de Seguimiento generado (${records.length} ítems) ✓`);
+    }
   } catch(e){
     console.error(e);
     toast('Error al generar el Seguimiento');
@@ -1931,6 +1951,12 @@ async function clickGenerarSeguimiento(){
       btn.style.cursor = 'pointer';
     }
   }
+}
+
+function logoutPanel(){
+  AT_TOKEN = '';
+  localStorage.removeItem('grn_at_token');
+  showTokenScreen();
 }
 
 // ─── TOKEN SCREEN ─────────────────────────────────────────────────────────────
