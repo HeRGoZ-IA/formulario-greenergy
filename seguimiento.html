@@ -92,6 +92,10 @@
   .hidden-file-input{position:absolute;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none}
   .photo-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
   .photo-action-btn{min-height:40px;padding:0 14px;border-radius:12px;font-size:13px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+  .preview-card{position:relative;flex:0 0 auto}
+  .preview-remove{position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:999px;background:rgba(0,0,0,.72);color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.16)}
+  .preview-label{font-size:11px;color:var(--n400);margin-top:8px}
+  .photo-count{font-size:10px;border-radius:999px;padding:4px 8px;background:rgba(59,130,246,.16);color:#bfdbfe;font-weight:700}
   .list-card{background:var(--n800);border:1px solid rgba(255,255,255,.07);border-radius:16px;padding:14px;margin-bottom:12px}
   .list-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
   .list-title{font-size:14px;font-weight:700;line-height:1.3}
@@ -220,7 +224,7 @@
 <script>
 const BASE_ID='app6WpUGWDLbyvl7k', TBL_PROYECTOS='tblVly4txK2GjYBid', TBL_SEGUIMIENTO_OBRA='tbla6QjQ1HnsWGdTN', TBL_SEGUIMIENTO_NOVEDADES='tblhQD2qW7stMElpw', TBL_SEGUIMIENTO_REUNIONES='tblOI8Zi9sUAOZS58', TOKEN_KEY='grn_at_token';
 let AT_TOKEN=localStorage.getItem(TOKEN_KEY)||'', pid=null;
-let state={view:'proyecto',project:null,codigoProyecto:'',projectTitle:'',items:[],novedades:[],reuniones:[],avanceSection:'pendientes',expandedTaskId:null,expandedZone:null};
+let state={view:'proyecto',project:null,codigoProyecto:'',projectTitle:'',items:[],novedades:[],reuniones:[],avanceSection:'pendientes',expandedTaskId:null,expandedZone:null,pendingTaskPhotos:{}};
 const $=id=>document.getElementById(id);
 function showToast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(showToast._timer);showToast._timer=setTimeout(()=>t.classList.remove('show'),2200);}
 function escapeHtml(s){return String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'","&#39;");}
@@ -361,11 +365,12 @@ function renderAvanceView(){
 }
 function renderTaskCard(rec,isEditable){
   const id=getField(rec,['ID ítem'],'—'),name=getField(rec,['Nombre ítem'],'Ítem'),zona=getField(rec,['Zona'],'—'),paquete=getField(rec,['Paquete'],'—'),prioridad=getField(rec,['Prioridad','Orden cronograma'],'—'),estado=getField(rec,['Estado ítem'],'Pendiente'),obs=getField(rec,['Observaciones ejecución'],''),isOpen=state.expandedTaskId===rec.id,photos=getField(rec,['Fotos avance'],[]),termDate=getField(rec,['Fecha terminación'],''),statusClass=itemStatusClass(estado),horas=getTaskHours(rec);
-  const previewId=`preview-${rec.id}`;
+  const pendingPhotos=getPendingTaskPhotos(rec.id);
+  const totalPhotos=(Array.isArray(photos)?photos.length:0)+pendingPhotos.length;
   if(isEditable){
-    return `<div class="card task-card ${isOpen?'open':''}"><div class="task-head" onclick="toggleTask('${rec.id}')"><div class="task-main"><div class="task-id">${escapeHtml(id)}</div><div class="task-name">${escapeHtml(name)}</div><div class="task-meta"><span class="mini">${escapeHtml(zona)}</span><span class="mini">${escapeHtml(paquete)}</span><span class="mini">Prioridad ${escapeHtml(prioridad)}</span><span class="mini">${escapeHtml(String(horas))} h</span></div></div><div class="task-actions"><span class="badge ${statusClass}">${escapeHtml(estado)}</span><button class="mini-btn btn-primary" onclick="event.stopPropagation(); toggleTask('${rec.id}')">Abrir</button></div></div><div class="task-body"><div class="field"><label>Observación de ejecución</label><textarea class="textarea" id="obs-${rec.id}" placeholder="Escribe una observación corta...">${escapeHtml(obs)}</textarea></div><div class="divider"></div><div class="field"><label>Fotos del avance</label><input type="file" class="hidden-file-input" id="files-${rec.id}" accept="image/*" multiple onchange="previewTaskFiles('${rec.id}')" /><div class="photo-actions"><button type="button" class="photo-action-btn btn-primary" onclick="openPhotoPicker('${rec.id}','camera')">📷 Tomar fotos</button><button type="button" class="photo-action-btn btn-secondary" onclick="openPhotoPicker('${rec.id}','gallery')">Galería</button></div><div class="caption" style="margin-top:6px">Máximo permitido: 3 fotos por tarea.</div><div id="${previewId}" class="preview-row"></div>${Array.isArray(photos)&&photos.length?`<div class="caption" style="margin-top:8px">Fotos guardadas actualmente</div><div class="preview-row">${photos.map(ph=>`<img class="preview" src="${ph.url}" alt="foto">`).join('')}</div>`:''}<div class="photo-note">La captura queda orientada a celular: primero cámara y, como respaldo, selección desde galería. La carga directa a Airtable sigue pendiente.</div></div><div class="actions-row"><button class="btn btn-primary" style="flex:1" onclick="saveAndCompleteTask('${rec.id}')">Terminar</button></div></div></div>`;
+    return `<div class="card task-card ${isOpen?'open':''}"><div class="task-head" onclick="toggleTask('${rec.id}')"><div class="task-main"><div class="task-id">${escapeHtml(id)}</div><div class="task-name">${escapeHtml(name)}</div><div class="task-meta"><span class="mini">${escapeHtml(zona)}</span><span class="mini">${escapeHtml(paquete)}</span><span class="mini">Prioridad ${escapeHtml(prioridad)}</span><span class="mini">${escapeHtml(String(horas))} h</span>${totalPhotos?`<span class="photo-count">${totalPhotos} foto${totalPhotos===1?'':'s'}</span>`:''}</div></div><div class="task-actions"><span class="badge ${statusClass}">${escapeHtml(estado)}</span><button class="mini-btn btn-primary" onclick="event.stopPropagation(); toggleTask('${rec.id}')">Abrir</button></div></div><div class="task-body"><div class="field"><label>Observación de ejecución</label><textarea class="textarea" id="obs-${rec.id}" placeholder="Escribe una observación corta...">${escapeHtml(obs)}</textarea></div><div class="divider"></div><div class="field"><label>Fotos del avance</label><input type="file" class="hidden-file-input" id="files-${rec.id}" accept="image/*" multiple onchange="previewTaskFiles('${rec.id}')" /><div class="photo-actions"><button type="button" class="photo-action-btn btn-primary" onclick="openPhotoPicker('${rec.id}','camera')">📷 Tomar fotos</button><button type="button" class="photo-action-btn btn-secondary" onclick="openPhotoPicker('${rec.id}','gallery')">Galería</button></div><div class="caption" style="margin-top:6px">Máximo permitido: 3 fotos por tarea.</div>${pendingPhotos.length?`<div class="preview-label">Fotos listas para subir</div><div class="preview-row">${pendingPhotos.map(ph=>`<div class="preview-card"><img class="preview" src="${ph.previewUrl}" alt="foto seleccionada"><button type="button" class="preview-remove" onclick="event.stopPropagation(); removePendingPhoto('${rec.id}','${ph.tempId}')">✕</button></div>`).join('')}</div>`:''}${Array.isArray(photos)&&photos.length?`<div class="preview-label">Fotos ya guardadas</div><div class="preview-row">${photos.map(ph=>`<img class="preview" src="${ph.url}" alt="foto">`).join('')}</div>`:''}</div><div class="actions-row"><button class="btn btn-primary" style="flex:1" onclick="saveAndCompleteTask('${rec.id}')">Terminar</button></div></div></div>`;
   }
-  return `<div class="card task-card ${isOpen?'open':''}"><div class="task-head" onclick="toggleTask('${rec.id}')"><div class="task-main"><div class="task-id">${escapeHtml(id)}</div><div class="task-name">${escapeHtml(name)}</div><div class="task-meta"><span class="mini">${escapeHtml(zona)}</span><span class="mini">${escapeHtml(paquete)}</span><span class="mini">Prioridad ${escapeHtml(prioridad)}</span><span class="mini">${escapeHtml(String(horas))} h</span></div></div><div class="task-actions"><span class="badge ${statusClass}">${escapeHtml(estado)}</span><button class="mini-btn btn-secondary" onclick="event.stopPropagation(); markTaskPending('${rec.id}')">Reabrir</button></div></div><div class="task-body">${termDate?`<div class="caption" style="margin-bottom:8px">Fecha terminación: ${formatDate(termDate)}</div>`:''}<div class="readonly-block"><div class="label">Observación de ejecución</div><div class="value">${renderRichText(obs)}</div></div>${Array.isArray(photos)&&photos.length?`<div class="readonly-block"><div class="label">Fotos guardadas</div><div class="preview-row">${photos.map(ph=>`<img class="preview" src="${ph.url}" alt="foto">`).join('')}</div></div>`:''}</div></div>`;
+  return `<div class="card task-card ${isOpen?'open':''}"><div class="task-head" onclick="toggleTask('${rec.id}')"><div class="task-main"><div class="task-id">${escapeHtml(id)}</div><div class="task-name">${escapeHtml(name)}</div><div class="task-meta"><span class="mini">${escapeHtml(zona)}</span><span class="mini">${escapeHtml(paquete)}</span><span class="mini">Prioridad ${escapeHtml(prioridad)}</span><span class="mini">${escapeHtml(String(horas))} h</span><span class="photo-count">${Array.isArray(photos)?photos.length:0} foto${Array.isArray(photos)&&photos.length===1?'':'s'}</span></div></div><div class="task-actions"><span class="badge ${statusClass}">${escapeHtml(estado)}</span><button class="mini-btn btn-secondary" onclick="event.stopPropagation(); markTaskPending('${rec.id}')">Reabrir</button></div></div><div class="task-body">${termDate?`<div class="caption" style="margin-bottom:8px">Fecha terminación: ${formatDate(termDate)}</div>`:''}<div class="readonly-block"><div class="label">Observación de ejecución</div><div class="value">${renderRichText(obs)}</div></div>${Array.isArray(photos)&&photos.length?`<div class="readonly-block"><div class="label">Fotos guardadas</div><div class="preview-row">${photos.map(ph=>`<img class="preview" src="${ph.url}" alt="foto">`).join('')}</div></div>`:`<div class="readonly-block"><div class="label">Fotos guardadas</div><div class="value">Sin fotos registradas</div></div>`}</div></div>`;
 }
 function renderZoneCard(group){
   const total=group.records.length;
@@ -387,6 +392,9 @@ function setAvanceSection(section){state.avanceSection=section;state.expandedTas
 function toggleTask(id){state.expandedTaskId=(state.expandedTaskId===id)?null:id;renderView();}
 function toggleZone(zona){state.expandedZone=(state.expandedZone===zona)?null:zona;renderView();}
 function openTaskFromZone(id,section){state.avanceSection=section;state.expandedTaskId=id;renderView();setTimeout(()=>{const el=document.getElementById(`obs-${id}`)||document.getElementById(`files-${id}`);if(el&&section==='pendientes') el.scrollIntoView({behavior:'smooth',block:'center'});},30);}
+function getPendingTaskPhotos(id){
+  return Array.isArray(state.pendingTaskPhotos[id])?state.pendingTaskPhotos[id]:[];
+}
 function openPhotoPicker(id,mode='camera'){
   const input=document.getElementById(`files-${id}`);
   if(!input) return;
@@ -396,21 +404,105 @@ function openPhotoPicker(id,mode='camera'){
   input.click();
 }
 function previewTaskFiles(id){
-  const input=document.getElementById(`files-${id}`),wrap=document.getElementById(`preview-${id}`);
-  if(!input||!wrap) return;
-  const files=Array.from(input.files||[]);
-  if(files.length>3){
+  const input=document.getElementById(`files-${id}`);
+  if(!input) return;
+  const current=getPendingTaskPhotos(id);
+  const incoming=Array.from(input.files||[]);
+  if(!incoming.length) return;
+  const remaining=3-current.length;
+  if(remaining<=0){
     showToast('Máximo 3 fotos por tarea');
     input.value='';
-    wrap.innerHTML='';
     return;
   }
-  wrap.innerHTML='';
-  files.forEach(file=>{
+  const accepted=incoming.slice(0,remaining).map(file=>({
+    tempId:`tmp_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
+    file,
+    previewUrl:URL.createObjectURL(file)
+  }));
+  state.pendingTaskPhotos[id]=current.concat(accepted);
+  if(incoming.length>remaining) showToast('Solo se agregaron 3 fotos como máximo');
+  input.value='';
+  state.expandedTaskId=id;
+  renderView();
+}
+function removePendingPhoto(id,tempId){
+  const current=getPendingTaskPhotos(id);
+  const next=current.filter(ph=>{
+    if(ph.tempId===tempId){
+      try{ URL.revokeObjectURL(ph.previewUrl); }catch(_){ }
+      return false;
+    }
+    return true;
+  });
+  state.pendingTaskPhotos[id]=next;
+  state.expandedTaskId=id;
+  renderView();
+}
+async function fileToBase64Content(file){
+  return new Promise((resolve,reject)=>{
     const reader=new FileReader();
-    reader.onload=e=>{const img=document.createElement('img');img.className='preview';img.src=e.target.result;wrap.appendChild(img);};
+    reader.onload=()=>{
+      const result=String(reader.result||'');
+      const base64=result.includes(',')?result.split(',')[1]:result;
+      resolve(base64);
+    };
+    reader.onerror=()=>reject(new Error('No se pudo leer una de las fotos.'));
     reader.readAsDataURL(file);
   });
+}
+async function compressImageIfNeeded(file){
+  if(!String(file.type||'').startsWith('image/') || file.size<=4_500_000) return file;
+  const dataUrl = await new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(reader.result);
+    reader.onerror=()=>reject(new Error('No se pudo procesar una de las fotos.'));
+    reader.readAsDataURL(file);
+  });
+  const img = await new Promise((resolve,reject)=>{
+    const image=new Image();
+    image.onload=()=>resolve(image);
+    image.onerror=()=>reject(new Error('No se pudo procesar una de las fotos.'));
+    image.src=dataUrl;
+  });
+  const maxDim=1600;
+  let {width,height}=img;
+  if(width>height && width>maxDim){ height=Math.round(height*(maxDim/width)); width=maxDim; }
+  else if(height>=width && height>maxDim){ width=Math.round(width*(maxDim/height)); height=maxDim; }
+  const canvas=document.createElement('canvas');
+  canvas.width=width; canvas.height=height;
+  const ctx=canvas.getContext('2d');
+  ctx.drawImage(img,0,0,width,height);
+  let quality=0.86;
+  let blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',quality));
+  while(blob && blob.size>4_800_000 && quality>0.45){
+    quality-=0.08;
+    blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',quality));
+  }
+  if(!blob) throw new Error('No se pudo comprimir una de las fotos.');
+  return new File([blob], (file.name||'foto').replace(/\.[^.]+$/,'') + '.jpg', {type:'image/jpeg'});
+}
+async function uploadAttachmentToAirtable(recordId, fieldName, file){
+  const prepared=await compressImageIfNeeded(file);
+  if(prepared.size>5_000_000) throw new Error(`La foto ${prepared.name} supera el límite de 5 MB para carga directa.`);
+  const base64=await fileToBase64Content(prepared);
+  const res=await fetch(`https://content.airtable.com/v0/${BASE_ID}/${recordId}/${encodeURIComponent(fieldName)}/uploadAttachment`,{
+    method:'POST',
+    headers:{
+      'Authorization':`Bearer ${AT_TOKEN}`,
+      'Content-Type':'application/json'
+    },
+    body:JSON.stringify({filename:prepared.name,contentType:prepared.type||'image/jpeg',file:base64})
+  });
+  const data=await res.json();
+  if(!res.ok) throw new Error(data?.error?.message||`No se pudo subir ${prepared.name}`);
+  return data;
+}
+async function uploadTaskAttachments(recordId, files){
+  for(let i=0;i<files.length;i++){
+    showToast(`Subiendo foto ${i+1} de ${files.length}...`);
+    await uploadAttachmentToAirtable(recordId,'Fotos avance',files[i].file||files[i]);
+  }
 }
 async function markTaskDone(id){
   try{await patchRecord(TBL_SEGUIMIENTO_OBRA,id,{'Estado ítem':'Terminado','Fecha terminación':nowIsoDate()});showToast('Tarea marcada como terminada');await init(false);state.view='avance';state.avanceSection='terminadas';state.expandedTaskId=id;renderView();}
@@ -424,11 +516,15 @@ async function saveAndCompleteTask(id){
   try{
     const obs=(document.getElementById(`obs-${id}`)?.value||'').trim();
     if(!obs){showToast('Escribe una observación antes de terminar');return;}
-    const input=document.getElementById(`files-${id}`);
-    const files=Array.from(input?.files||[]);
-    if(files.length>3){showToast('Máximo 3 fotos por tarea');return;}
+    const pendingPhotos=getPendingTaskPhotos(id);
+    if(pendingPhotos.length>3){showToast('Máximo 3 fotos por tarea');return;}
+    if(pendingPhotos.length){
+      await uploadTaskAttachments(id,pendingPhotos);
+    }
     await patchRecord(TBL_SEGUIMIENTO_OBRA,id,{'Observaciones ejecución':obs,'Estado ítem':'Terminado','Fecha terminación':nowIsoDate()});
-    showToast(files.length?'Tarea terminada. Fotos pendientes de integración con Airtable':'Tarea terminada');
+    (state.pendingTaskPhotos[id]||[]).forEach(ph=>{ try{ URL.revokeObjectURL(ph.previewUrl); }catch(_){ } });
+    delete state.pendingTaskPhotos[id];
+    showToast('Tarea terminada');
     await init(false);
     state.view='avance';
     state.avanceSection='terminadas';
