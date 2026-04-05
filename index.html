@@ -703,7 +703,7 @@ function goSec(idx){
 // ─── RENDER ─────────────────────────────────────────────────────────────────
 function render(idx){
   const m=document.getElementById('main');
-  if(idx===0){m.innerHTML=renderGen();restoreGen();return;}
+  if(idx===0){m.innerHTML=renderGen();requestAnimationFrame(()=>restoreGen());return;}
   if(idx===7){m.innerHTML=renderSum();initSign();return;}
   const keys=['cm','tc','rec','fos','cab','pu'];
   const key=keys[idx-1];
