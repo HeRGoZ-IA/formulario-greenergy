@@ -56,8 +56,9 @@ body{font-family:var(--font);background:var(--n50);color:var(--n900);font-size:1
 .tab.done::after{content:'✓';color:var(--g300);margin-left:4px;font-size:10px}
 
 /* ── OFFLINE BANNER ──────────────────────── */
-.offline-banner{background:#7f1d1d;color:#fecaca;font-size:12px;font-weight:500;text-align:center;padding:8px 16px;display:none}
+.offline-banner{background:#7f1d1d;color:#fecaca;font-size:12px;font-weight:500;text-align:center;padding:10px 16px;display:none;line-height:1.5;border-bottom:2px solid #ef4444}
 .offline-banner.show{display:block}
+.offline-banner strong{color:white;font-weight:700}
 
 /* ── MAIN ─────────────────────────────────── */
 .main{max-width:680px;margin:0 auto}
@@ -273,7 +274,7 @@ body{font-family:var(--font);background:var(--n50);color:var(--n900);font-size:1
 </div>
 
 <div class="offline-banner" id="offline-banner">
-  Sin conexión — el registro se guarda localmente y se sincronizará al recuperar señal
+  ⚠ Sin conexión — <strong>No cierres este formulario</strong> o perderás las fotos tomadas. Los datos se guardan automáticamente y se enviarán al recuperar señal.
 </div>
 
 <div class="main" id="main"></div>
@@ -539,6 +540,12 @@ let state={};
 let curSec=0;
 let online=navigator.onLine;
 
+// ─── AIRTABLE DIRECT UPLOAD ─────────────────────────────────────────────────
+const AT_BASE_ID    = 'app6WpUGWDLbyvl7k';
+const AT_TBL_ITEMS  = 'tblbmQwbOLVtNqLFR';
+const AT_TOKEN_KEY  = 'grn_at_token';
+let   AT_TOKEN      = localStorage.getItem(AT_TOKEN_KEY) || '';
+
 function initState(){
   Object.values(ITEMS).flat().forEach(it=>{
     state[it.id]={cond:null,fields:{},photos:{}};
@@ -582,6 +589,106 @@ function updateConn(){
 }
 window.addEventListener('online',updateConn);
 window.addEventListener('offline',updateConn);
+
+// ─── AVISO AL CERRAR CON FOTOS PENDIENTES ───────────────────────────────────
+function hasPendingPhotos(){
+  return Object.values(state).some(st=>
+    st.photoThumbs && Object.keys(st.photoThumbs).length > 0
+  );
+}
+window.addEventListener('beforeunload',function(e){
+  if(!online && hasPendingPhotos()){
+    const msg='⚠ Tienes fotos tomadas que se perderán si cierras el formulario. Recupera la conexión antes de salir.';
+    e.preventDefault();
+    e.returnValue=msg;
+    return msg;
+  }
+});
+
+// ─── SUBIDA DIRECTA DE FOTO A AIRTABLE ──────────────────────────────────────
+// Busca el record de Airtable para un ítem dado el código de proyecto + itemId
+// El ID del ítem en Airtable se guarda en state[itemId].airtableRecordId al enviar el formulario
+async function uploadPhotoToAirtable(itemId, pi, base64DataUrl){
+  if(!AT_TOKEN){ console.warn('Sin token de Airtable — foto guardada solo localmente'); return false; }
+
+  // El record de Airtable para este ítem se guarda después de que n8n responde
+  const airtableId = state[itemId]?.airtableRecordId;
+  if(!airtableId){
+    // Todavía no se ha enviado el formulario principal — la foto queda en photoThumbs
+    // y se subirá masivamente después del submit
+    return false;
+  }
+
+  try {
+    // Convertir base64 a Blob binario
+    const [meta, data] = base64DataUrl.split(',');
+    const mime = meta.match(/:(.*?);/)[1];
+    const byteChars = atob(data);
+    const byteArr = new Uint8Array(byteChars.length);
+    for(let i=0;i<byteChars.length;i++) byteArr[i]=byteChars.charCodeAt(i);
+    const blob = new Blob([byteArr], {type: mime});
+
+    // Obtener attachments existentes para no sobreescribirlos
+    const getRes = await fetch(
+      `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${airtableId}?fields%5B%5D=Fotos`,
+      { headers: { Authorization: `Bearer ${AT_TOKEN}` } }
+    );
+    const getRec = await getRes.json();
+    const existingPhotos = getRec?.fields?.Fotos || [];
+
+    // Subir el nuevo archivo usando FormData (Airtable Attachments API)
+    const formData = new FormData();
+    const it = Object.values(ITEMS).flat().find(i=>i.id===itemId);
+    const label = it?.photos[pi] || `foto-${pi}`;
+    const filename = `${gdata.codigo}_${itemId}_${pi}.jpg`;
+    formData.append('file', blob, filename);
+    formData.append('filename', filename);
+
+    const uploadRes = await fetch(
+      `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${airtableId}/uploadAttachment/Fotos`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${AT_TOKEN}` },
+        body: formData
+      }
+    );
+    if(!uploadRes.ok){
+      const err = await uploadRes.json();
+      console.warn('Error subiendo foto a Airtable:', err);
+      return false;
+    }
+    return true;
+  } catch(e){
+    console.warn('Error en uploadPhotoToAirtable:', e);
+    return false;
+  }
+}
+
+// Sube masivamente todas las fotos acumuladas en photoThumbs después del submit
+async function uploadAllPendingPhotosToAirtable(){
+  const allItems = Object.values(ITEMS).flat().filter(it=>!it.onlyIf||cfg[it.onlyIf]);
+  let uploaded=0, failed=0;
+  const btn=document.getElementById('sub-btn');
+
+  for(const it of allItems){
+    const st=state[it.id];
+    if(!st?.photoThumbs) continue;
+    for(const [pi, b64] of Object.entries(st.photoThumbs)){
+      if(!b64) continue;
+      if(btn) btn.textContent=`Subiendo fotos... ${uploaded+failed+1}`;
+      const ok = await uploadPhotoToAirtable(it.id, parseInt(pi), b64);
+      if(ok){
+        uploaded++;
+        // Limpiar el thumbnail una vez subido para no reintentar
+        delete st.photoThumbs[pi];
+        save();
+      } else {
+        failed++;
+      }
+    }
+  }
+  return {uploaded, failed};
+}
 
 // ─── NAVIGATION ─────────────────────────────────────────────────────────────
 function goSec(idx){
@@ -978,10 +1085,9 @@ function capPh(id,pi,inp){
 
   const reader=new FileReader();
   reader.onload=e=>{
-    // Create thumbnail via canvas — max 120x90px
     const img=new Image();
     img.onload=()=>{
-      // Full-res version (max 800x600) for sending to Google Drive
+      // Full-res version (max 800x600) para subir a Airtable
       const canvas=document.createElement('canvas');
       const maxW=800,maxH=600;
       let w=img.width,h=img.height;
@@ -990,7 +1096,7 @@ function capPh(id,pi,inp){
       canvas.width=w;canvas.height=h;
       canvas.getContext('2d').drawImage(img,0,0,w,h);
       const fullThumb=canvas.toDataURL('image/jpeg',0.75);
-      // Small display thumbnail (max 156px wide) for UI
+      // Thumbnail pequeño solo para mostrar en la UI
       const dCanvas=document.createElement('canvas');
       const dW=Math.min(w,156),dH=Math.round(h*(dW/w));
       dCanvas.width=dW;dCanvas.height=dH;
@@ -1007,7 +1113,21 @@ function capPh(id,pi,inp){
       updateChip(id);
       updateProg();
       save();
-      toast('Foto guardada ✓');
+      // Intentar subida directa a Airtable si el formulario ya fue enviado
+      if(online && state[id]?.airtableRecordId && AT_TOKEN){
+        toast('Foto capturada — subiendo a Airtable...');
+        uploadPhotoToAirtable(id, pi, fullThumb).then(ok=>{
+          if(ok){
+            delete state[id].photoThumbs[pi];
+            save();
+            toast('Foto guardada en Airtable ✓');
+          } else {
+            toast('Foto guardada localmente — se subirá al enviar');
+          }
+        });
+      } else {
+        toast('Foto guardada ✓ — se subirá al enviar el formulario');
+      }
     };
     img.src=e.target.result;
   };
@@ -1176,72 +1296,6 @@ function buildPayload(){
   };
 }
 
-// Recolecta todas las fotos tomadas con sus metadatos
-function collectPhotos(){
-  const allItems = Object.values(ITEMS).flat().filter(it => !it.onlyIf || cfg[it.onlyIf]);
-  const fotos = [];
-  allItems.forEach(it => {
-    const st = state[it.id];
-    if(!st || !st.photos) return;
-    const zona = (() => {
-      const z = it.id.substring(0,2);
-      const map = {cm:'Cuarto de máquinas',tc:'Techo de cabina',re:'Recorrido',fo:'Foso',ca:'Cabina',pu:'Puertas de hall'};
-      return map[z] || '';
-    })();
-    it.photos.forEach((label, pi) => {
-      if(st.photos[pi] && st.photoThumbs && st.photoThumbs[pi]){
-        fotos.push({
-          itemId: `${gdata.codigo}_${it.id}`,
-          fotoId: `${gdata.codigo}_${it.id}-${pi}`,
-          label: label,
-          zona: zona,
-          data: st.photoThumbs[pi]
-        });
-      }
-    });
-  });
-  return fotos;
-}
-
-// Sube fotos una por una al webhook de fotos
-async function uploadPhotos(proyectoAirtableId, itemsMap){
-  const fotos = collectPhotos();
-  if(fotos.length === 0) return;
-
-  let uploaded = 0;
-  const total = fotos.length;
-  const btn = document.getElementById('sub-btn');
-
-  for(const foto of fotos){
-    const itemAirtableId = itemsMap[foto.itemId] || null;
-    try {
-      await fetch(WEBHOOK_FOTOS_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fotoId: foto.fotoId,
-          proyectoAirtableId: proyectoAirtableId,
-          itemAirtableId: itemAirtableId,
-          label: foto.label,
-          zona: foto.zona,
-          data: foto.data
-        })
-      });
-      uploaded++;
-      if(btn) btn.textContent = `Subiendo fotos... ${uploaded}/${total}`;
-    } catch(e){
-      console.warn('Error subiendo foto', foto.fotoId, e);
-    }
-  }
-  if(btn){
-    btn.textContent = `✓ Enviado — ${uploaded}/${total} fotos subidas`;
-    btn.style.background = 'var(--g400)';
-    btn.style.color = 'var(--g900)';
-    btn.disabled = false;
-  }
-  toast(`${uploaded} foto(s) subida(s) a Airtable ✓`);
-}
-
 async function submit(){
   const btn = document.getElementById('sub-btn');
   if(btn){ btn.disabled=true; btn.textContent='Enviando datos...'; }
@@ -1262,29 +1316,46 @@ async function submit(){
       body: JSON.stringify(payload)
     });
     if(res.ok){
-      let proyectoAirtableId = null;
       let itemsMap = {};
       try {
         const resData = await res.json();
-        proyectoAirtableId = resData.proyectoAirtableId || null;
-        // itemsMap: { "cm01": "recXXXX", "cm02": "recYYYY", ... }
+        // itemsMap: { "GRN-2026-300_cm01": "recXXXX", ... }
         if(Array.isArray(resData.items)){
-          resData.items.forEach(i => { if(i.itemId && i.airtableId) itemsMap[i.itemId] = i.airtableId; });
+          resData.items.forEach(i => {
+            if(i.itemId && i.airtableId){
+              // El itemId que devuelve n8n tiene formato "codigo_itemId"
+              // Extraemos solo el itemId (ej. "cm01") para guardarlo en state
+              const shortId = i.itemId.includes('_') ? i.itemId.split('_').slice(1).join('_') : i.itemId;
+              if(state[shortId]) state[shortId].airtableRecordId = i.airtableId;
+            }
+          });
+          save(); // Guardar los airtableRecordId en localStorage
         }
       } catch(e){ console.warn('No se pudo parsear respuesta del webhook', e); }
 
       localStorage.setItem('grn_sent_'+URL_CODE, new Date().toISOString());
       localStorage.removeItem('grn_pending_payload');
-      save();
       toast('Datos enviados ✓ — subiendo fotos...');
       if(btn) btn.textContent = 'Subiendo fotos...';
 
-      // Subir fotos en segundo plano
-      if(proyectoAirtableId){
-        await uploadPhotos(proyectoAirtableId, itemsMap);
+      // Subir fotos directamente a Airtable
+      if(AT_TOKEN){
+        const {uploaded, failed} = await uploadAllPendingPhotosToAirtable();
+        if(btn){
+          btn.textContent = failed > 0
+            ? `✓ Enviado — ${uploaded} foto(s) subidas, ${failed} con error`
+            : `✓ Enviado — ${uploaded} foto(s) subidas`;
+          btn.style.background='var(--g400)';
+          btn.style.color='var(--g900)';
+          btn.disabled=false;
+        }
+        toast(failed > 0
+          ? `${uploaded} foto(s) subidas, ${failed} no pudieron subirse`
+          : `${uploaded} foto(s) subidas a Airtable ✓`
+        );
       } else {
-        if(btn){ btn.textContent='✓ Enviado — toca para reenviar'; btn.style.background='var(--g400)'; btn.style.color='var(--g900)'; btn.disabled=false; }
-        toast('Registro enviado a Airtable ✓');
+        if(btn){ btn.textContent='✓ Datos enviados'; btn.style.background='var(--g400)'; btn.style.color='var(--g900)'; btn.disabled=false; }
+        toast('Registro enviado ✓ — configura el token para subir fotos');
       }
     } else {
       throw new Error('Error ' + res.status);
@@ -1327,13 +1398,84 @@ function toast(msg){
   t._t=setTimeout(()=>t.classList.remove('show'),2400);
 }
 
+// ─── LOGIN / TOKEN ────────────────────────────────────────────────────────────
+function showTokenScreen(){
+  document.getElementById('tabs').style.display='none';
+  document.getElementById('btm').style.display='none';
+  document.getElementById('offline-banner').style.display='none';
+  document.getElementById('main').innerHTML=`
+    <div style="display:flex;align-items:center;justify-content:center;min-height:70vh;padding:24px">
+      <div style="background:white;border:1.5px solid var(--n100);border-radius:var(--r-xl);padding:28px 24px;width:100%;max-width:400px;box-shadow:var(--sh-lg)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+          <div style="width:40px;height:40px;background:var(--g400);border-radius:10px;display:flex;align-items:center;justify-content:center">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="#062812"><path d="M12 2L4 7v10l8 5 8-5V7L12 2zm0 2.3l6 3.7v8l-6 3.7L6 16V8l6-3.7z"/></svg>
+          </div>
+          <div>
+            <div style="font-size:15px;font-weight:700;color:var(--n900)">Greenergy · Estado inicial</div>
+            <div style="font-size:11px;color:var(--n400)">Primera vez en este dispositivo</div>
+          </div>
+        </div>
+        <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--n500);margin-bottom:6px">Token de acceso</div>
+        <input id="token-input" type="password" placeholder="patXXXXXXXXXXXXXX.XXXX..."
+          style="width:100%;background:var(--n50);border:1.5px solid var(--n100);border-radius:var(--r-sm);padding:10px 12px;font-size:13px;color:var(--n900);font-family:monospace;margin-bottom:6px;outline:none"
+          onkeydown="if(event.key==='Enter') saveToken()">
+        <div style="font-size:11px;color:var(--n400);margin-bottom:16px;line-height:1.5">
+          Pídele este token al coordinador del proyecto. Solo lo necesitas ingresar una vez en este dispositivo.
+        </div>
+        <button onclick="saveToken()"
+          style="width:100%;background:var(--g600);color:white;border:none;border-radius:var(--r);padding:13px;font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font)">
+          Activar formulario
+        </button>
+        <div id="token-error" style="font-size:12px;color:var(--red);margin-top:8px;display:none;text-align:center">
+          Token inválido — verifica que sea correcto
+        </div>
+      </div>
+    </div>`;
+}
+
+async function saveToken(){
+  const val = document.getElementById('token-input')?.value?.trim();
+  if(!val || !val.startsWith('pat')){
+    document.getElementById('token-error').style.display='block';
+    return;
+  }
+  // Verificar token contra Airtable
+  try {
+    const res = await fetch(
+      `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}?maxRecords=1`,
+      { headers: { Authorization: `Bearer ${val}` } }
+    );
+    if(!res.ok) throw new Error('401');
+    AT_TOKEN = val;
+    localStorage.setItem(AT_TOKEN_KEY, AT_TOKEN);
+    document.getElementById('token-error').style.display='none';
+    startApp();
+  } catch(e){
+    document.getElementById('token-error').style.display='block';
+  }
+}
+
+function startApp(){
+  document.getElementById('tabs').style.display='';
+  document.getElementById('btm').style.display='';
+  updateConn();
+  const existing=localStorage.getItem(SK);
+  if(existing){
+    const parsed=JSON.parse(existing);
+    const allItems=Object.values(ITEMS).flat();
+    const done=allItems.filter(it=>parsed.state&&parsed.state[it.id]?.cond).length;
+    if(done>0) showResumeToast(done, allItems.length);
+  }
+  goSec(0);
+  updateProg();
+}
+
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 initState();
 load();
 updateConn();
 
 if(!URL_CODE){
-  // No project code in URL — show welcome screen
   document.getElementById('main').innerHTML=`
     <div style="padding:32px 20px;max-width:480px;margin:0 auto;text-align:center">
       <div style="width:64px;height:64px;background:var(--g100);border-radius:16px;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-size:28px">📋</div>
@@ -1346,19 +1488,12 @@ if(!URL_CODE){
     </div>`;
   document.getElementById('tabs').style.display='none';
   document.getElementById('btm').style.display='none';
+} else if(!AT_TOKEN){
+  // Tiene código de proyecto pero no tiene token → mostrar pantalla de login
+  showTokenScreen();
 } else {
-  // Has project code — check if resuming existing session
-  const existing=localStorage.getItem(SK);
-  if(existing){
-    const parsed=JSON.parse(existing);
-    const allItems=Object.values(ITEMS).flat();
-    const done=allItems.filter(it=>parsed.state&&parsed.state[it.id]?.cond).length;
-    if(done>0){
-      showResumeToast(done, allItems.length);
-    }
-  }
-  goSec(0);
-  updateProg();
+  // Todo listo → arrancar directamente
+  startApp();
 }
 
 function showResumeToast(done, total){
