@@ -543,8 +543,18 @@ let online=navigator.onLine;
 // ─── AIRTABLE DIRECT UPLOAD ─────────────────────────────────────────────────
 const AT_BASE_ID    = 'app6WpUGWDLbyvl7k';
 const AT_TBL_ITEMS  = 'tblbmQwbOLVtNqLFR';
+const AT_TBL_PROY   = 'tblVly4txK2GjYBid';
 const AT_TOKEN_KEY  = 'grn_at_token';
 let   AT_TOKEN      = localStorage.getItem(AT_TOKEN_KEY) || '';
+
+// Estado de creación del proyecto en Airtable
+let proyectoCreado  = false;   // true cuando el proyecto ya existe en Airtable
+let proyectoRecId   = null;    // record ID del proyecto en la tabla Proyectos
+
+// Cola de cambios pendientes para sincronizar cuando vuelva la señal
+// Formato: [ { type:'item'|'gdata', itemId?, fields:{} } ]
+let _pendingSync    = [];
+let _syncTimer      = null;    // debounce timer para PATCH de campos
 
 function initState(){
   Object.values(ITEMS).flat().forEach(it=>{
@@ -579,31 +589,226 @@ function flashSaved(){
 
 // ─── CONNECTIVITY ───────────────────────────────────────────────────────────
 function updateConn(){
-  online=navigator.onLine;
-  const pill=document.getElementById('conn-pill');
-  const txt=document.getElementById('conn-txt');
-  const banner=document.getElementById('offline-banner');
-  pill.className='conn-pill '+(online?'online':'offline');
-  txt.textContent=online?'En línea':'Sin señal';
-  banner.classList.toggle('show',!online);
-}
-window.addEventListener('online',updateConn);
-window.addEventListener('offline',updateConn);
+  const wasOffline = !online;
+  online = navigator.onLine;
+  const pill   = document.getElementById('conn-pill');
+  const txt    = document.getElementById('conn-txt');
+  const banner = document.getElementById('offline-banner');
+  if(pill)   pill.className = 'conn-pill '+(online?'online':'offline');
+  if(txt)    txt.textContent = online ? 'En línea' : 'Sin señal';
+  if(banner) banner.classList.toggle('show', !online);
 
-// ─── AVISO AL CERRAR CON FOTOS PENDIENTES ───────────────────────────────────
+  // Al recuperar señal: sincronizar cambios pendientes
+  if(online && wasOffline && proyectoCreado){
+    flushPendingSync();
+  }
+}
+window.addEventListener('online',  updateConn);
+window.addEventListener('offline', updateConn);
+
+// ─── AVISO AL CERRAR CON DATOS PENDIENTES ───────────────────────────────────
 function hasPendingPhotos(){
-  return Object.values(state).some(st=>
+  return Object.values(state).some(st =>
     st.photoThumbs && Object.keys(st.photoThumbs).length > 0
   );
 }
-window.addEventListener('beforeunload',function(e){
-  if(!online && hasPendingPhotos()){
-    const msg='⚠ Tienes fotos tomadas que se perderán si cierras el formulario. Recupera la conexión antes de salir.';
+function hasPendingChanges(){
+  return _pendingSync.length > 0 || hasPendingPhotos();
+}
+window.addEventListener('beforeunload', function(e){
+  if(!online && hasPendingChanges()){
+    const msg = '⚠ Hay cambios sin guardar. Recupera la conexión antes de cerrar.';
     e.preventDefault();
-    e.returnValue=msg;
+    e.returnValue = msg;
     return msg;
   }
 });
+
+// ─── CREAR PROYECTO EN AIRTABLE (al abrir, si no existe) ────────────────────
+async function ensureProyectoCreado(){
+  if(!AT_TOKEN || !URL_CODE || !online) return false;
+  try {
+    // Verificar si ya tiene ítems (= proyecto existe)
+    const formula = encodeURIComponent(`FIND("${URL_CODE}", {ID ítem}) > 0`);
+    const chk = await fetch(
+      `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}?filterByFormula=${formula}&maxRecords=1`,
+      { headers: { Authorization: `Bearer ${AT_TOKEN}` } }
+    );
+    if(!chk.ok) return false;
+    const chkData = await chk.json();
+    if(chkData.records?.length > 0){
+      proyectoCreado = true;
+      return true; // Ya existe — loadFromAirtable lo cargará
+    }
+
+    // No existe → crear via n8n webhook con payload mínimo
+    const res = await fetch(WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        codigo: URL_CODE,
+        cliente: gdata.cliente || '',
+        dir: gdata.dir || '',
+        torre: gdata.torre || '',
+        ascensor: gdata.ascensor || '',
+        tecnico: gdata.tecnico || '',
+        fecha: gdata.fecha || new Date().toISOString().split('T')[0],
+        marca: '', paradas: '', cap: '', vel: '',
+        traccion: gdata.traccion || 'Gearless 1:1',
+        tension: gdata.tension || '380 V',
+        puertas: gdata.puertas || 'Automáticas',
+        dbl: cfg.dbl || false, disc: cfg.disc || false,
+        fechaEnvio: new Date().toISOString().split('T')[0],
+        photosPending: 0, hallazgos: 0,
+        items: Object.values(ITEMS).flat().map(it => ({
+          id: `${URL_CODE}_${it.id}`,
+          name: it.name, ntc: it.ntc || '',
+          zona: {cm:'Cuarto de máquinas',tc:'Techo de cabina',re:'Recorrido',
+                 fo:'Foso',ca:'Cabina',pu:'Puertas de hall'}[it.id.substring(0,2)] || '',
+          cond: '', fields: {}, photosTotal: it.photos.length, photosDone: 0
+        })),
+        esActualizacion: false,
+        _creacionInicial: true
+      })
+    });
+    if(!res.ok) return false;
+    // Parsear respuesta para guardar airtableRecordIds
+    try {
+      const resData = await res.json();
+      if(Array.isArray(resData.items)){
+        resData.items.forEach(i => {
+          if(i.id && i.fields?.['ID ítem']){
+            const fullId  = i.fields['ID ítem'];
+            const shortId = fullId.includes('_') ? fullId.split('_').slice(1).join('_') : fullId;
+            if(shortId && state[shortId]) state[shortId].airtableRecordId = i.id;
+          }
+        });
+        save();
+      }
+    } catch(e){}
+    proyectoCreado = true;
+    return true;
+  } catch(e){
+    console.warn('Error creando proyecto:', e);
+    return false;
+  }
+}
+
+// ─── PATCH EN TIEMPO REAL — CAMPOS DE ÍTEM ──────────────────────────────────
+// Regla merge: solo escribir campos que estén vacíos en Airtable
+// (Airtable es fuente de verdad — no sobreescribir valores existentes)
+async function patchItemToAirtable(itemId){
+  if(!AT_TOKEN || !proyectoCreado || !online) return;
+  const st = state[itemId];
+  if(!st?.airtableRecordId) return;
+
+  const condMap = {good:'Bueno', regular:'Regular', bad:'Malo', absent:'Ausente'};
+  const fields = {};
+
+  if(st.cond) fields['Condición'] = condMap[st.cond] || st.cond;
+
+  // Campos técnicos — serializar como JSON
+  const camposFiltrados = {...(st.fields || {})};
+  delete camposFiltrados['_obs'];
+  if(Object.keys(camposFiltrados).length > 0){
+    fields['Campos técnicos'] = JSON.stringify(camposFiltrados);
+  }
+  if(st.fields['_obs']) fields['Observaciones'] = st.fields['_obs'];
+
+  if(!Object.keys(fields).length) return;
+
+  try {
+    // Merge: leer primero para no sobreescribir datos de otro técnico
+    const getRes = await fetch(
+      `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${st.airtableRecordId}`,
+      { headers: { Authorization: `Bearer ${AT_TOKEN}` } }
+    );
+    if(!getRes.ok) return;
+    const getRec = await getRes.json();
+    const existing = getRec.fields || {};
+
+    // Solo enviar campos que estén vacíos o sin valor en Airtable
+    const toWrite = {};
+    Object.entries(fields).forEach(([k, v]) => {
+      const cur = existing[k];
+      // Escribir si: Airtable está vacío O el valor es exactamente '{}' (JSON vacío)
+      if(!cur || cur === '{}' || cur === '' || cur === null){
+        toWrite[k] = v;
+      }
+      // Condición: siempre actualizar (el técnico puede corregirla)
+      if(k === 'Condición') toWrite[k] = v;
+    });
+
+    if(!Object.keys(toWrite).length) return;
+
+    await fetch(
+      `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${st.airtableRecordId}`,
+      {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${AT_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: toWrite })
+      }
+    );
+  } catch(e){
+    // Guardar en cola para sincronizar después
+    _pendingSync.push({ type: 'item', itemId, fields });
+  }
+}
+
+// ─── PATCH EN TIEMPO REAL — DATOS GENERALES DEL PROYECTO ────────────────────
+async function patchGdataToAirtable(){
+  if(!AT_TOKEN || !proyectoRecId || !online) return;
+  const fields = {};
+  if(gdata.cliente)  fields['Cliente']         = gdata.cliente;
+  if(gdata.dir)      fields['Dirección']        = gdata.dir;
+  if(gdata.torre)    fields['Torre / Bloque']   = gdata.torre;
+  if(gdata.ascensor) fields['Ascensor']         = gdata.ascensor;
+  if(gdata.tecnico)  fields['Técnico']          = gdata.tecnico;
+  if(gdata.fecha)    fields['Fecha visita']     = gdata.fecha;
+  if(gdata.marca)    fields['Marca original']   = gdata.marca;
+  if(gdata.paradas)  fields['N.° paradas']      = Number(gdata.paradas) || null;
+  if(gdata.cap)      fields['Capacidad (kg)']   = Number(gdata.cap) || null;
+  if(gdata.vel)      fields['Velocidad (m/s)']  = gdata.vel;
+  if(gdata.traccion) fields['Tracción']         = gdata.traccion;
+  if(gdata.tension)  fields['Tensión']          = gdata.tension;
+  if(gdata.puertas)  fields['Puertas']          = gdata.puertas;
+  if(!Object.keys(fields).length) return;
+  try {
+    await fetch(
+      `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_PROY}/${proyectoRecId}`,
+      {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${AT_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields })
+      }
+    );
+  } catch(e){
+    _pendingSync.push({ type: 'gdata', fields });
+  }
+}
+
+// ─── FLUSH: sincronizar cola pendiente cuando vuelve la señal ────────────────
+async function flushPendingSync(){
+  if(!_pendingSync.length) return;
+  const queue = [..._pendingSync];
+  _pendingSync = [];
+  for(const op of queue){
+    try {
+      if(op.type === 'item' && op.itemId){
+        await patchItemToAirtable(op.itemId);
+      } else if(op.type === 'gdata'){
+        await patchGdataToAirtable();
+      }
+    } catch(e){ _pendingSync.push(op); } // reintentar después
+  }
+  if(_pendingSync.length === 0) toast('Cambios sincronizados ✓');
+}
+
+// ─── DEBOUNCE PARA PATCH DE CAMPOS ──────────────────────────────────────────
+function schedulePatch(itemId){
+  clearTimeout(_syncTimer);
+  _syncTimer = setTimeout(() => patchItemToAirtable(itemId), 1500);
+}
 
 // ─── SUBIDA DIRECTA DE FOTO A AIRTABLE ──────────────────────────────────────
 async function uploadPhotoToAirtable(itemId, pi, base64DataUrl){
@@ -984,7 +1189,7 @@ function restoreGen(){
 function renderSum(){
   const all=Object.values(ITEMS).flat().filter(it=>!it.onlyIf||cfg[it.onlyIf]);
   const tot=all.length;
-  let done=0,good=0,reg=0,bad=0,abs=0,phPend=0;
+  let done=0,good=0,reg=0,bad=0,abs=0,phDone=0,phTot=0;
   const issues=[];
   all.forEach(it=>{
     const st=state[it.id]||{};
@@ -993,9 +1198,25 @@ function renderSum(){
     if(st.cond==='regular') reg++;
     if(st.cond==='bad'){bad++;issues.push({name:it.name,type:'bad'});}
     if(st.cond==='absent'){abs++;issues.push({name:it.name,type:'absent'});}
-    const pd=Object.values(st.photos||{}).filter(Boolean).length;
-    phPend+=(it.photos.length-pd);
+    const maxPh = it.photos.length;
+    const pd = Math.min(Object.values(st.photos||{}).filter(Boolean).length, maxPh);
+    phDone += pd;
+    phTot  += maxPh;
   });
+  const phPend = phTot - phDone;
+
+  // Semáforo de completitud
+  const allDone    = done === tot;
+  const allPhotos  = phPend === 0;
+  const statusColor = allDone && allPhotos ? 'var(--g500)' : done === 0 ? 'var(--red)' : 'var(--amber)';
+  const statusIcon  = allDone && allPhotos ? '✅' : done === 0 ? '🔴' : '🟡';
+  const statusMsg   = allDone && allPhotos
+    ? 'Registro completo — todos los ítems tienen condición y fotos'
+    : !allDone && phPend > 0
+      ? `Faltan ${tot - done} ítem(s) sin condición y ${phPend} foto(s)`
+      : !allDone
+        ? `Faltan ${tot - done} ítem(s) sin condición registrada`
+        : `Faltan ${phPend} foto(s) por registrar`;
 
   const issHtml=issues.length
     ?issues.map(i=>`<div class="issue">
@@ -1004,12 +1225,22 @@ function renderSum(){
       </div>`).join('')
     :`<div style="padding:10px 16px;font-size:12px;color:var(--n400)">Sin hallazgos críticos registrados</div>`;
 
-  const syncHtml=!online?`<div class="sync-card show" id="sync-card">
-    <p>Sin conexión — hay ${Object.values(state).filter(s=>s.cond).length} ítems guardados localmente listos para sincronizar.</p>
-    <button class="sync-btn" onclick="syncData()">Sincronizar cuando haya señal</button>
-  </div>`:'';
+  // Estado de sincronización
+  const syncStatus = !online
+    ? `<div style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:var(--r-lg);padding:12px 16px;margin-bottom:10px;font-size:12px;color:#92400e;font-weight:500">
+        ⚠ Sin conexión — los cambios se guardarán automáticamente al recuperar señal
+       </div>`
+    : proyectoCreado
+      ? `<div style="background:rgba(34,164,74,.08);border:1px solid rgba(34,164,74,.2);border-radius:var(--r-lg);padding:12px 16px;margin-bottom:10px;font-size:12px;color:var(--g700);font-weight:500">
+          ✓ Guardado automático activo — cada cambio se sincroniza con Airtable
+         </div>`
+      : '';
 
   return `<div class="sum">
+    <div style="background:white;border-radius:var(--r-lg);border:1.5px solid var(--n100);padding:18px;margin-bottom:10px;text-align:center">
+      <div style="font-size:32px;margin-bottom:8px">${statusIcon}</div>
+      <div style="font-size:14px;font-weight:600;color:${statusColor};line-height:1.4">${statusMsg}</div>
+    </div>
     <div class="s-card">
       <div class="s-hdr">Resumen del registro</div>
       <div class="s-row"><span class="s-lbl">Ítems completados</span><span class="s-val ${done===tot?'ok':'warn'}">${done} / ${tot}</span></div>
@@ -1017,24 +1248,46 @@ function renderSum(){
       <div class="s-row"><span class="s-lbl">Estado regular</span><span class="s-val warn">${reg}</span></div>
       <div class="s-row"><span class="s-lbl">En mal estado</span><span class="s-val bad">${bad}</span></div>
       <div class="s-row"><span class="s-lbl">Ausentes / no instalados</span><span class="s-val bad">${abs}</span></div>
-      <div class="s-row"><span class="s-lbl">Fotos pendientes</span><span class="s-val ${phPend===0?'ok':'warn'}">${phPend}</span></div>
+      <div class="s-row"><span class="s-lbl">Fotos registradas</span><span class="s-val ${phPend===0?'ok':'warn'}">${phDone} / ${phTot}</span></div>
     </div>
-    <div class="s-card">
-      <div class="s-hdr">Hallazgos críticos — Malo / Ausente</div>
-      <div class="issues">${issHtml}</div>
-    </div>
-    ${syncHtml}
-    <div class="sign-card">
-      <h3>Firma del técnico</h3>
-      <canvas class="sign-canvas" id="sign-c"></canvas>
-      <button class="sign-clear" onclick="clrSign()">Borrar firma</button>
-    </div>
-    <button class="submit-btn" id="sub-btn" onclick="submit()">Enviar registro completo</button>
-    <div class="sum-note">
-      ${phPend>0?`⚠ Hay ${phPend} foto(s) pendiente(s). Puedes enviar y completarlas luego — recibirás un recordatorio en 24 h.<br>`:''}
-      ${!online?'Sin conexión — el registro se guardará localmente y se enviará automáticamente al recuperar señal.':'Al enviar, el registro se guardará en Airtable y se notificará al coordinador.'}
+    ${issues.length ? `<div class="s-card"><div class="s-hdr">Hallazgos críticos — Malo / Ausente</div><div class="issues">${issHtml}</div></div>` : ''}
+    ${syncStatus}
+    <button onclick="marcarFinalizado()" id="btn-finalizar"
+      style="width:100%;padding:15px;background:${allDone?'var(--g600)':'var(--n200)'};color:${allDone?'white':'var(--n400)'};border:none;border-radius:var(--r-lg);font-size:15px;font-weight:700;cursor:${allDone?'pointer':'not-allowed'};font-family:var(--font);transition:all .2s;letter-spacing:-.01em;margin-bottom:8px">
+      ${allDone ? '✓ Marcar registro como finalizado' : `Aún faltan ${tot-done} ítem(s) por completar`}
+    </button>
+    <div style="font-size:11px;color:var(--n400);text-align:center;line-height:1.6">
+      Los datos se guardan automáticamente — puedes cerrar el formulario en cualquier momento.
     </div>
   </div>`;
+}
+
+async function marcarFinalizado(){
+  const all = Object.values(ITEMS).flat().filter(it=>!it.onlyIf||cfg[it.onlyIf]);
+  const done = all.filter(it=>state[it.id]?.cond).length;
+  if(done < all.length){ toast('Completa todos los ítems antes de finalizar'); return; }
+  if(!online){ toast('Sin conexión — intenta cuando recuperes señal'); return; }
+  if(!proyectoRecId){ toast('No se encontró el registro del proyecto'); return; }
+
+  const btn = document.getElementById('btn-finalizar');
+  if(btn){ btn.disabled=true; btn.textContent='Guardando...'; }
+
+  try {
+    await fetch(
+      `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_PROY}/${proyectoRecId}`,
+      {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${AT_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: { 'Estado registro': 'Finalizado', 'Fecha envío': new Date().toISOString().split('T')[0] } })
+      }
+    );
+    localStorage.setItem('grn_sent_'+URL_CODE, new Date().toISOString());
+    if(btn){ btn.textContent='✓ Registro finalizado'; btn.style.background='var(--g400)'; btn.style.color='var(--g900)'; }
+    toast('Registro marcado como finalizado ✓');
+  } catch(e){
+    toast('Error al finalizar — intenta de nuevo');
+    if(btn){ btn.disabled=false; btn.textContent='✓ Marcar registro como finalizado'; }
+  }
 }
 
 // ─── INTERACTIONS ────────────────────────────────────────────────────────────
@@ -1076,6 +1329,8 @@ function setCond(id,cond){
   });
   updateProg();
   save();
+  // Guardar en Airtable en tiempo real
+  if(proyectoCreado) patchItemToAirtable(id);
   const msgs={good:'Bueno ✓',regular:'Regular',bad:'Malo — se registrará como hallazgo',absent:'Ausente — se registrará como hallazgo'};
   toast(msgs[cond]);
 }
@@ -1084,6 +1339,8 @@ function sf(id,field,value){
   if(!state[id]) state[id]={cond:null,fields:{},photos:{}};
   state[id].fields[field]=value;
   save();
+  // Guardar en Airtable con debounce (esperar 1.5s de inactividad)
+  if(proyectoCreado) schedulePatch(id);
 }
 
 function chkAl(id,field,value,alId){
@@ -1216,6 +1473,11 @@ function buildAscId(){
 function sg(key,val){
   gdata[key]=val;
   save();
+  // Guardar datos generales en Airtable con debounce
+  if(proyectoCreado && proyectoRecId){
+    clearTimeout(_syncTimer);
+    _syncTimer = setTimeout(patchGdataToAirtable, 1500);
+  }
 }
 
 function togCfg(key,togId){
@@ -1501,23 +1763,30 @@ async function startApp(){
   if(btm)  btm.style.display='';
   updateConn();
 
-  // ── Intentar cargar datos desde Airtable si hay conexión ──────────────────
   if(online && AT_TOKEN && URL_CODE){
-    showLoadingScreen('Cargando datos del proyecto...');
+    showLoadingScreen('Verificando proyecto...');
+
+    // 1. Cargar datos existentes de Airtable
     const loaded = await loadFromAirtable();
+
     if(loaded > 0){
-      toast(`Proyecto cargado desde Airtable — ${loaded} ítem(s) con datos ✓`);
+      toast(`Proyecto cargado — ${loaded} ítem(s) con datos ✓`);
+      proyectoCreado = true;
     } else {
-      // Sin datos remotos — revisar localStorage
-      const existing = localStorage.getItem(SK);
-      if(existing){
-        const parsed = JSON.parse(existing);
-        const allItems = Object.values(ITEMS).flat();
-        const done = allItems.filter(it => parsed.state && parsed.state[it.id]?.cond).length;
-        if(done > 0) showResumeToast(done, allItems.length);
+      // No hay ítems → crear proyecto ahora
+      showLoadingScreen('Creando proyecto en Airtable...');
+      const created = await ensureProyectoCreado();
+      if(created){
+        toast('Proyecto creado — guardado automático activado ✓');
+        // Cargar los airtableRecordIds recién creados
+        await loadFromAirtable();
       }
     }
-  } else {
+
+    // Cargar el record ID del proyecto para PATCH de gdata
+    await loadProyectoRecId();
+
+  } else if(!online){
     // Sin conexión — usar localStorage
     const existing = localStorage.getItem(SK);
     if(existing){
@@ -1530,6 +1799,20 @@ async function startApp(){
 
   goSec(0);
   updateProg();
+}
+
+async function loadProyectoRecId(){
+  if(!AT_TOKEN || !URL_CODE || !online) return;
+  try {
+    const formula = encodeURIComponent(`{Código proyecto}="${URL_CODE}"`);
+    const res = await fetch(
+      `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_PROY}?filterByFormula=${formula}&maxRecords=1`,
+      { headers: { Authorization: `Bearer ${AT_TOKEN}` } }
+    );
+    if(!res.ok) return;
+    const data = await res.json();
+    if(data.records?.[0]) proyectoRecId = data.records[0].id;
+  } catch(e){}
 }
 
 function showLoadingScreen(msg){
@@ -1556,6 +1839,9 @@ async function loadFromAirtable(){
     } while(offset);
 
     if(!records.length) return 0;
+
+    // Proyecto existe en Airtable
+    proyectoCreado = true;
 
     // Reconstruir state desde los registros de Airtable
     let loaded = 0;
