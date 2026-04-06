@@ -606,8 +606,6 @@ window.addEventListener('beforeunload',function(e){
 });
 
 // ─── SUBIDA DIRECTA DE FOTO A AIRTABLE ──────────────────────────────────────
-// Busca el record de Airtable para un ítem dado el código de proyecto + itemId
-// El ID del ítem en Airtable se guarda en state[itemId].airtableRecordId al enviar el formulario
 async function uploadPhotoToAirtable(itemId, pi, base64DataUrl){
   if(!AT_TOKEN){ console.warn('Sin token — foto guardada localmente'); return false; }
 
@@ -615,31 +613,58 @@ async function uploadPhotoToAirtable(itemId, pi, base64DataUrl){
   if(!airtableId) return false;
 
   try {
-    // Extraer base64 puro del dataURL (quitar "data:image/jpeg;base64,")
     const base64 = base64DataUrl.includes(',') ? base64DataUrl.split(',')[1] : base64DataUrl;
-    const it = Object.values(ITEMS).flat().find(i=>i.id===itemId);
     const filename = `${gdata.codigo}_${itemId}_${pi}.jpg`;
 
-    // Mismo método que seguimiento_v6: content.airtable.com + JSON body
+    // ── Si el slot ya tiene un attachment previo, eliminarlo primero ──────────
+    const existingAttId = state[itemId]?.photoAttachmentIds?.[pi];
+    if(existingAttId){
+      // Para eliminar un attachment individual: PATCH con el campo Fotos
+      // conteniendo solo los attachments que NO son el que vamos a reemplazar
+      const getRes = await fetch(
+        `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${airtableId}?fields%5B%5D=Fotos`,
+        { headers: { Authorization: `Bearer ${AT_TOKEN}` } }
+      );
+      if(getRes.ok){
+        const getRec = await getRes.json();
+        const allAtts = getRec?.fields?.Fotos || [];
+        // Filtrar fuera el attachment del slot que vamos a reemplazar
+        const remaining = allAtts
+          .filter(att => att.id !== existingAttId)
+          .map(att => ({ url: att.url })); // Airtable solo acepta {url} en PATCH
+        await fetch(
+          `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${airtableId}`,
+          {
+            method: 'PATCH',
+            headers: { Authorization: `Bearer ${AT_TOKEN}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields: { 'Fotos': remaining } })
+          }
+        );
+      }
+      // Limpiar el ID guardado del slot
+      delete state[itemId].photoAttachmentIds[pi];
+    }
+
+    // ── Subir la foto nueva ───────────────────────────────────────────────────
     const res = await fetch(
       `https://content.airtable.com/v0/${AT_BASE_ID}/${airtableId}/${encodeURIComponent('Fotos')}/uploadAttachment`,
       {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${AT_TOKEN}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          filename: filename,
-          contentType: 'image/jpeg',
-          file: base64
-        })
+        headers: { 'Authorization': `Bearer ${AT_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename, contentType: 'image/jpeg', file: base64 })
       }
     );
     const data = await res.json();
     if(!res.ok){
       console.warn('Error subiendo foto a Airtable:', data?.error?.message || data);
       return false;
+    }
+
+    // Guardar el nuevo attachment ID en el slot
+    if(data?.id){
+      if(!state[itemId].photoAttachmentIds) state[itemId].photoAttachmentIds = {};
+      state[itemId].photoAttachmentIds[pi] = data.id;
+      save();
     }
     return true;
   } catch(e){
@@ -1545,10 +1570,19 @@ async function loadFromAirtable(){
       const obs = rec.fields['Observaciones'] || '';
       if(obs) state[shortId].fields['_obs'] = obs;
 
-      // Fotos ya cargadas — marcar como cargadas para el contador
-      const fotosCargadas = rec.fields['N.° fotos cargadas'] || 0;
-      if(fotosCargadas > 0){
-        // Marcar las primeras N fotos como ya subidas (sin thumbnail local)
+      // Fotos ya cargadas — guardar attachment IDs por slot para poder reemplazarlas
+      const fotosArr = rec.fields['Fotos'] || [];
+      if(Array.isArray(fotosArr) && fotosArr.length > 0){
+        if(!state[shortId].photoAttachmentIds) state[shortId].photoAttachmentIds = {};
+        fotosArr.forEach((att, i) => {
+          // Marcar el slot como ocupado
+          state[shortId].photos[i] = 'uploaded';
+          // Guardar el attachment ID para poder reemplazarlo después
+          state[shortId].photoAttachmentIds[i] = att.id;
+        });
+      } else {
+        // Sin fotos en Airtable, usar N.° fotos cargadas como fallback
+        const fotosCargadas = rec.fields['N.° fotos cargadas'] || 0;
         for(let i = 0; i < fotosCargadas; i++){
           if(!state[shortId].photos[i]) state[shortId].photos[i] = 'uploaded';
         }
