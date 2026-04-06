@@ -1428,7 +1428,8 @@ function showTokenScreen(){
 async function saveToken(){
   const val = document.getElementById('token-input')?.value?.trim();
   if(!val || !val.startsWith('pat')){
-    document.getElementById('token-error').style.display='block';
+    const errEl = document.getElementById('token-error');
+    if(errEl) errEl.style.display='block';
     return;
   }
   // Verificar token contra Airtable
@@ -1440,28 +1441,167 @@ async function saveToken(){
     if(!res.ok) throw new Error('401');
     AT_TOKEN = val;
     localStorage.setItem(AT_TOKEN_KEY, AT_TOKEN);
-    document.getElementById('token-error').style.display='none';
+    const errEl2 = document.getElementById('token-error');
+    if(errEl2) errEl2.style.display='none';
     startApp();
   } catch(e){
-    document.getElementById('token-error').style.display='block';
+    const errEl = document.getElementById('token-error');
+    if(errEl) errEl.style.display='block';
   }
 }
 
-function startApp(){
+async function startApp(){
   const tabs = document.getElementById('tabs');
   const btm  = document.getElementById('btm');
   if(tabs) tabs.style.display='';
   if(btm)  btm.style.display='';
   updateConn();
-  const existing=localStorage.getItem(SK);
-  if(existing){
-    const parsed=JSON.parse(existing);
-    const allItems=Object.values(ITEMS).flat();
-    const done=allItems.filter(it=>parsed.state&&parsed.state[it.id]?.cond).length;
-    if(done>0) showResumeToast(done, allItems.length);
+
+  // ── Intentar cargar datos desde Airtable si hay conexión ──────────────────
+  if(online && AT_TOKEN && URL_CODE){
+    showLoadingScreen('Cargando datos del proyecto...');
+    const loaded = await loadFromAirtable();
+    if(loaded > 0){
+      toast(`Proyecto cargado desde Airtable — ${loaded} ítem(s) con datos ✓`);
+    } else {
+      // Sin datos remotos — revisar localStorage
+      const existing = localStorage.getItem(SK);
+      if(existing){
+        const parsed = JSON.parse(existing);
+        const allItems = Object.values(ITEMS).flat();
+        const done = allItems.filter(it => parsed.state && parsed.state[it.id]?.cond).length;
+        if(done > 0) showResumeToast(done, allItems.length);
+      }
+    }
+  } else {
+    // Sin conexión — usar localStorage
+    const existing = localStorage.getItem(SK);
+    if(existing){
+      const parsed = JSON.parse(existing);
+      const allItems = Object.values(ITEMS).flat();
+      const done = allItems.filter(it => parsed.state && parsed.state[it.id]?.cond).length;
+      if(done > 0) showResumeToast(done, allItems.length);
+    }
   }
+
   goSec(0);
   updateProg();
+}
+
+function showLoadingScreen(msg){
+  const m = document.getElementById('main');
+  if(!m) return;
+  m.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:14px">
+    <div style="width:32px;height:32px;border:3px solid rgba(26,133,59,.2);border-top-color:var(--g500);border-radius:50%;animation:spin .8s linear infinite"></div>
+    <div style="font-size:13px;color:var(--n500);font-weight:500">${msg}</div>
+  </div>`;
+}
+
+async function loadFromAirtable(){
+  // Consultar Items_Estado_Inicial filtrando por código de proyecto
+  try {
+    const formula = encodeURIComponent(`FIND("${URL_CODE}", {ID ítem}) > 0`);
+    let records = [], offset = '';
+    do {
+      const url = `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}?filterByFormula=${formula}${offset?'&offset='+offset:''}`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${AT_TOKEN}` } });
+      if(!res.ok) return 0;
+      const data = await res.json();
+      records = records.concat(data.records || []);
+      offset = data.offset || '';
+    } while(offset);
+
+    if(!records.length) return 0;
+
+    // Reconstruir state desde los registros de Airtable
+    let loaded = 0;
+    records.forEach(rec => {
+      const fullId  = rec.fields['ID ítem'] || '';
+      // ID ítem tiene formato "COD_cm01" → extraer solo "cm01"
+      const shortId = fullId.includes('_') ? fullId.split('_').slice(1).join('_') : fullId;
+      if(!shortId || !state[shortId]) return;
+
+      const condMap = {
+        'Bueno':'good','bueno':'good','good':'good',
+        'Regular':'regular','regular':'regular',
+        'Malo':'bad','malo':'bad','bad':'bad',
+        'Ausente':'absent','ausente':'absent','absent':'absent'
+      };
+
+      // Condición
+      const condRaw = rec.fields['Condición'] || '';
+      if(condRaw) state[shortId].cond = condMap[condRaw] || condRaw;
+
+      // Campos técnicos (JSON en texto)
+      const camposRaw = rec.fields['Campos técnicos'] || '{}';
+      try {
+        const campos = typeof camposRaw === 'string' ? JSON.parse(camposRaw) : camposRaw;
+        if(campos && typeof campos === 'object'){
+          state[shortId].fields = campos;
+        }
+      } catch(e){}
+
+      // Observaciones (campo separado en algunos registros)
+      const obs = rec.fields['Observaciones'] || '';
+      if(obs) state[shortId].fields['_obs'] = obs;
+
+      // Fotos ya cargadas — marcar como cargadas para el contador
+      const fotosCargadas = rec.fields['N.° fotos cargadas'] || 0;
+      if(fotosCargadas > 0){
+        // Marcar las primeras N fotos como ya subidas (sin thumbnail local)
+        for(let i = 0; i < fotosCargadas; i++){
+          if(!state[shortId].photos[i]) state[shortId].photos[i] = 'uploaded';
+        }
+      }
+
+      // Guardar el airtableRecordId para subida directa de fotos nuevas
+      state[shortId].airtableRecordId = rec.id;
+
+      if(condRaw) loaded++;
+    });
+
+    // Restaurar datos generales del proyecto desde Airtable
+    await loadProjectDataFromAirtable();
+
+    save();
+    return loaded;
+  } catch(e){
+    console.warn('Error cargando desde Airtable:', e);
+    return 0;
+  }
+}
+
+async function loadProjectDataFromAirtable(){
+  try {
+    const TBL_PROYECTOS = 'tblVly4txK2GjYBid';
+    const formula = encodeURIComponent(`{Código proyecto}="${URL_CODE}"`);
+    const res = await fetch(
+      `https://api.airtable.com/v0/${AT_BASE_ID}/${TBL_PROYECTOS}?filterByFormula=${formula}&maxRecords=1`,
+      { headers: { Authorization: `Bearer ${AT_TOKEN}` } }
+    );
+    if(!res.ok) return;
+    const data = await res.json();
+    const rec = data.records?.[0];
+    if(!rec) return;
+    const f = rec.fields;
+    // Solo rellenar si el campo local está vacío
+    if(f['Cliente'] && !gdata.cliente)         gdata.cliente   = f['Cliente'];
+    if(f['Dirección'] && !gdata.dir)            gdata.dir       = f['Dirección'];
+    if(f['Torre / Bloque'] && !gdata.torre)     gdata.torre     = f['Torre / Bloque'];
+    if(f['Ascensor'] && !gdata.ascensor)        gdata.ascensor  = f['Ascensor'];
+    if(f['Técnico'] && !gdata.tecnico)          gdata.tecnico   = f['Técnico'];
+    if(f['Fecha visita'] && !gdata.fecha)       gdata.fecha     = f['Fecha visita'];
+    if(f['Marca original'] && !gdata.marca)     gdata.marca     = f['Marca original'];
+    if(f['N.° paradas'] && !gdata.paradas)      gdata.paradas   = String(f['N.° paradas']);
+    if(f['Capacidad (kg)'] && !gdata.cap)       gdata.cap       = String(f['Capacidad (kg)']);
+    if(f['Velocidad (m/s)'] && !gdata.vel)      gdata.vel       = String(f['Velocidad (m/s)']);
+    if(f['Tracción'] && !gdata.traccion)        gdata.traccion  = f['Tracción'];
+    if(f['Tensión'] && !gdata.tension)          gdata.tension   = f['Tensión'];
+    if(f['Puertas'] && !gdata.puertas)          gdata.puertas   = f['Puertas'];
+    gdata.codigo = URL_CODE;
+  } catch(e){
+    console.warn('Error cargando datos del proyecto:', e);
+  }
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
