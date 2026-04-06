@@ -54,6 +54,8 @@ body{font-family:var(--font);background:var(--n50);color:var(--n900);font-size:1
 .tab.active{color:var(--g200);border-bottom-color:var(--g400);background:rgba(255,255,255,.05)}
 .tab.done{color:rgba(255,255,255,.45)}
 .tab.done::after{content:'✓';color:var(--g300);margin-left:4px;font-size:10px}
+.tab.locked{cursor:not-allowed;opacity:.35}
+.tab.locked:hover{color:rgba(255,255,255,.35)}
 
 /* ── OFFLINE BANNER ──────────────────────── */
 .offline-banner{background:#7f1d1d;color:#fecaca;font-size:12px;font-weight:500;text-align:center;padding:10px 16px;display:none;line-height:1.5;border-bottom:2px solid #ef4444}
@@ -263,13 +265,13 @@ body{font-family:var(--font);background:var(--n50);color:var(--n900);font-size:1
   </div>
   <div class="tabs" id="tabs">
     <div class="tab active" onclick="goSec(0)">General</div>
-    <div class="tab" onclick="goSec(1)">C. Máquinas</div>
-    <div class="tab" onclick="goSec(2)">T. Cabina</div>
-    <div class="tab" onclick="goSec(3)">Recorrido</div>
-    <div class="tab" onclick="goSec(4)">Foso</div>
-    <div class="tab" onclick="goSec(5)">Cabina</div>
-    <div class="tab" onclick="goSec(6)">P. Hall</div>
-    <div class="tab" onclick="goSec(7)">Resumen</div>
+    <div class="tab locked" id="tab-1" onclick="goSec(1)">C. Máquinas</div>
+    <div class="tab locked" id="tab-2" onclick="goSec(2)">T. Cabina</div>
+    <div class="tab locked" id="tab-3" onclick="goSec(3)">Recorrido</div>
+    <div class="tab locked" id="tab-4" onclick="goSec(4)">Foso</div>
+    <div class="tab locked" id="tab-5" onclick="goSec(5)">Cabina</div>
+    <div class="tab locked" id="tab-6" onclick="goSec(6)">P. Hall</div>
+    <div class="tab locked" id="tab-7" onclick="goSec(7)">Resumen</div>
   </div>
 </div>
 
@@ -754,36 +756,70 @@ async function patchItemToAirtable(itemId){
 // ─── PATCH EN TIEMPO REAL — DATOS GENERALES DEL PROYECTO ────────────────────
 async function patchGdataToAirtable(){
   if(!AT_TOKEN || !online) return;
-  // Si proyectoRecId aún no está disponible, reintentarlo en 2s
-  if(!proyectoRecId){
-    setTimeout(patchGdataToAirtable, 2000);
-    return;
+
+  // Estrategia 1: PATCH directo si tenemos el proyectoRecId
+  if(proyectoRecId){
+    const fields = {
+      'Cliente':           gdata.cliente   || '',
+      'Dirección':         gdata.dir       || '',
+      'Torre / Bloque':    gdata.torre     || '',
+      'Ascensor':          gdata.ascensor  || '',
+      'Técnico':           gdata.tecnico   || '',
+      'Marca del Ascensor': gdata.marca    || '',
+      'Velocidad (m/s)':   gdata.vel       || '',
+    };
+    if(gdata.fecha)    fields['Fecha visita']   = gdata.fecha;
+    if(gdata.paradas)  fields['N.° paradas']    = Number(gdata.paradas) || null;
+    if(gdata.cap)      fields['Capacidad (kg)'] = Number(gdata.cap)     || null;
+    if(gdata.traccion) fields['Tracción']       = gdata.traccion;
+    if(gdata.tension)  fields['Tensión']        = gdata.tension;
+    if(gdata.puertas)  fields['Puertas']        = gdata.puertas;
+
+    try {
+      const res = await fetch(
+        `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_PROY}/${proyectoRecId}`,
+        {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${AT_TOKEN}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fields })
+        }
+      );
+      if(res.ok) return; // Éxito — terminar aquí
+      // Si falla, caer a estrategia 2
+    } catch(e){ /* caer a estrategia 2 */ }
   }
-  const fields = {};
-  // Siempre enviar todos los campos con valor (sobreescribe lo existente)
-  if(gdata.cliente  !== undefined) fields['Cliente']         = gdata.cliente  || '';
-  if(gdata.dir      !== undefined) fields['Dirección']       = gdata.dir      || '';
-  if(gdata.torre    !== undefined) fields['Torre / Bloque']  = gdata.torre    || '';
-  if(gdata.ascensor !== undefined) fields['Ascensor']        = gdata.ascensor || '';
-  if(gdata.tecnico  !== undefined) fields['Técnico']         = gdata.tecnico  || '';
-  if(gdata.fecha)                  fields['Fecha visita']    = gdata.fecha;
-  if(gdata.marca    !== undefined) fields['Marca del Ascensor'] = gdata.marca    || '';
-  if(gdata.paradas) fields['N.° paradas']     = Number(gdata.paradas) || null;
-  if(gdata.cap)     fields['Capacidad (kg)']  = Number(gdata.cap)     || null;
-  if(gdata.vel      !== undefined) fields['Velocidad (m/s)'] = gdata.vel      || '';
-  if(gdata.traccion) fields['Tracción']  = gdata.traccion;
-  if(gdata.tension)  fields['Tensión']   = gdata.tension;
-  if(gdata.puertas)  fields['Puertas']   = gdata.puertas;
-  if(!Object.keys(fields).length) return;
+
+  // Estrategia 2: webhook n8n (siempre funciona, crea o actualiza)
   try {
-    await fetch(
-      `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_PROY}/${proyectoRecId}`,
-      {
-        method: 'PATCH',
-        headers: { Authorization: `Bearer ${AT_TOKEN}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields })
-      }
-    );
+    await fetch(WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        codigo:    gdata.codigo   || URL_CODE,
+        cliente:   gdata.cliente  || '',
+        dir:       gdata.dir      || '',
+        torre:     gdata.torre    || '',
+        ascensor:  gdata.ascensor || '',
+        tecnico:   gdata.tecnico  || '',
+        fecha:     gdata.fecha    || '',
+        marca:     gdata.marca    || '',
+        paradas:   gdata.paradas  || '',
+        cap:       gdata.cap      || '',
+        vel:       gdata.vel      || '',
+        traccion:  gdata.traccion || '',
+        tension:   gdata.tension  || '',
+        puertas:   gdata.puertas  || '',
+        dbl:       cfg.dbl  || false,
+        disc:      cfg.disc || false,
+        fechaEnvio: new Date().toISOString().split('T')[0],
+        photosPending: 0, hallazgos: 0,
+        items: [],          // lista vacía — solo actualizar proyecto
+        esActualizacion: true,
+        _soloGdata: true    // flag para que n8n sepa que no debe tocar ítems
+      })
+    });
+    // Si el proyectoRecId aún no estaba, intentar cargarlo ahora
+    if(!proyectoRecId) loadProyectoRecId();
   } catch(e){
     _pendingSync.push({ type: 'gdata' });
   }
@@ -941,7 +977,19 @@ async function uploadAllPendingPhotosToAirtable(){
 }
 
 // ─── NAVIGATION ─────────────────────────────────────────────────────────────
+function unlockTabs(){
+  for(let i = 1; i <= 7; i++){
+    const t = document.getElementById('tab-'+i);
+    if(t) t.classList.remove('locked');
+  }
+}
+
 function goSec(idx){
+  // Bloquear pestañas si el proyecto no está creado todavía
+  if(idx > 0 && !proyectoCreado){
+    toast('⚠ Completa los datos generales y presiona "Iniciar registro" primero');
+    return;
+  }
   curSec=idx;
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===idx));
   render(idx);
@@ -1152,9 +1200,88 @@ function renderGen(){
       </div>
     </div>
     <div class="sec-nav">
-      <button class="nav-btn nav-next" style="flex:1" onclick="goSec(1)">Iniciar registro →</button>
+      <button class="nav-btn nav-next" style="flex:1" onclick="iniciarRegistro()">Iniciar registro →</button>
     </div>
   </div>`;
+}
+
+async function iniciarRegistro(){
+  // Si el proyecto ya está creado, ir directo
+  if(proyectoCreado){ goSec(1); return; }
+
+  // Verificar que al menos el técnico haya llenado algo
+  if(!online){
+    toast('Sin conexión — el proyecto se creará al recuperar señal');
+    goSec(1);
+    return;
+  }
+
+  const btn = document.querySelector('.nav-btn.nav-next');
+  if(btn){ btn.disabled=true; btn.textContent='Creando proyecto...'; }
+
+  try {
+    // Enviar datos generales via n8n — igual que siempre lo ha hecho
+    const res = await fetch(WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        codigo:    URL_CODE,
+        cliente:   gdata.cliente  || '',
+        dir:       gdata.dir      || '',
+        torre:     gdata.torre    || '',
+        ascensor:  gdata.ascensor || '',
+        tecnico:   gdata.tecnico  || '',
+        fecha:     gdata.fecha    || new Date().toISOString().split('T')[0],
+        marca:     gdata.marca    || '',
+        paradas:   gdata.paradas  || '',
+        cap:       gdata.cap      || '',
+        vel:       gdata.vel      || '',
+        traccion:  gdata.traccion || 'Gearless 1:1',
+        tension:   gdata.tension  || '380 V',
+        puertas:   gdata.puertas  || 'Automáticas',
+        dbl:       cfg.dbl  || false,
+        disc:      cfg.disc || false,
+        fechaEnvio: new Date().toISOString().split('T')[0],
+        photosPending: 0, hallazgos: 0,
+        items: Object.values(ITEMS).flat().map(it => ({
+          id: `${URL_CODE}_${it.id}`,
+          name: it.name, ntc: it.ntc || '',
+          zona: {cm:'Cuarto de máquinas',tc:'Techo de cabina',re:'Recorrido',
+                 fo:'Foso',ca:'Cabina',pu:'Puertas de hall'}[it.id.substring(0,2)] || '',
+          cond: '', fields: {}, photosTotal: it.photos.length, photosDone: 0
+        })),
+        esActualizacion: false
+      })
+    });
+
+    if(res.ok){
+      // Parsear airtableRecordIds de la respuesta
+      try {
+        const resData = await res.json();
+        if(Array.isArray(resData.items)){
+          resData.items.forEach(i => {
+            if(i.id && i.fields?.['ID ítem']){
+              const fullId  = i.fields['ID ítem'];
+              const shortId = fullId.includes('_') ? fullId.split('_').slice(1).join('_') : fullId;
+              if(shortId && state[shortId]) state[shortId].airtableRecordId = i.id;
+            }
+          });
+          save();
+        }
+      } catch(e){}
+
+      proyectoCreado = true;
+      unlockTabs();
+      await loadProyectoRecId();
+      toast('Proyecto creado ✓ — guardado automático activo');
+    }
+  } catch(e){
+    console.warn('Error creando proyecto:', e);
+    toast('Error al crear proyecto — continuando sin guardado automático');
+  }
+
+  if(btn){ btn.disabled=false; btn.textContent='Iniciar registro →'; }
+  goSec(1);
 }
 
 function restoreGen(){
@@ -1872,30 +1999,24 @@ async function startApp(){
   updateConn();
 
   if(online && AT_TOKEN && URL_CODE){
-    showLoadingScreen('Verificando proyecto...');
-
-    // 1. Cargar datos existentes de Airtable
+    showLoadingScreen('Cargando proyecto...');
     const loaded = await loadFromAirtable();
-
     if(loaded > 0){
-      toast(`Proyecto cargado — ${loaded} ítem(s) con datos ✓`);
       proyectoCreado = true;
+      unlockTabs();
+      await loadProyectoRecId();
+      toast(`Proyecto cargado — ${loaded} ítem(s) con datos ✓`);
     } else {
-      // No hay ítems → crear proyecto ahora
-      showLoadingScreen('Creando proyecto en Airtable...');
-      const created = await ensureProyectoCreado();
-      if(created){
-        toast('Proyecto creado — guardado automático activado ✓');
-        // Cargar los airtableRecordIds recién creados
-        await loadFromAirtable();
+      // Proyecto nuevo o sin datos — mostrar General en blanco
+      const existing = localStorage.getItem(SK);
+      if(existing){
+        const parsed = JSON.parse(existing);
+        const allItems = Object.values(ITEMS).flat();
+        const done = allItems.filter(it => parsed.state && parsed.state[it.id]?.cond).length;
+        if(done > 0) showResumeToast(done, allItems.length);
       }
     }
-
-    // Cargar el record ID del proyecto para PATCH de gdata
-    await loadProyectoRecId();
-
   } else if(!online){
-    // Sin conexión — usar localStorage
     const existing = localStorage.getItem(SK);
     if(existing){
       const parsed = JSON.parse(existing);
