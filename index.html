@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Estado Inicial · Greenergy v5</title>
+<title>Estado Inicial · Greenergy</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -609,52 +609,36 @@ window.addEventListener('beforeunload',function(e){
 // Busca el record de Airtable para un ítem dado el código de proyecto + itemId
 // El ID del ítem en Airtable se guarda en state[itemId].airtableRecordId al enviar el formulario
 async function uploadPhotoToAirtable(itemId, pi, base64DataUrl){
-  if(!AT_TOKEN){ console.warn('Sin token de Airtable — foto guardada solo localmente'); return false; }
+  if(!AT_TOKEN){ console.warn('Sin token — foto guardada localmente'); return false; }
 
-  // El record de Airtable para este ítem se guarda después de que n8n responde
   const airtableId = state[itemId]?.airtableRecordId;
-  if(!airtableId){
-    // Todavía no se ha enviado el formulario principal — la foto queda en photoThumbs
-    // y se subirá masivamente después del submit
-    return false;
-  }
+  if(!airtableId) return false;
 
   try {
-    // Convertir base64 a Blob binario
-    const [meta, data] = base64DataUrl.split(',');
-    const mime = meta.match(/:(.*?);/)[1];
-    const byteChars = atob(data);
-    const byteArr = new Uint8Array(byteChars.length);
-    for(let i=0;i<byteChars.length;i++) byteArr[i]=byteChars.charCodeAt(i);
-    const blob = new Blob([byteArr], {type: mime});
-
-    // Obtener attachments existentes para no sobreescribirlos
-    const getRes = await fetch(
-      `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${airtableId}?fields%5B%5D=Fotos`,
-      { headers: { Authorization: `Bearer ${AT_TOKEN}` } }
-    );
-    const getRec = await getRes.json();
-    const existingPhotos = getRec?.fields?.Fotos || [];
-
-    // Subir el nuevo archivo usando FormData (Airtable Attachments API)
-    const formData = new FormData();
+    // Extraer base64 puro del dataURL (quitar "data:image/jpeg;base64,")
+    const base64 = base64DataUrl.includes(',') ? base64DataUrl.split(',')[1] : base64DataUrl;
     const it = Object.values(ITEMS).flat().find(i=>i.id===itemId);
-    const label = it?.photos[pi] || `foto-${pi}`;
     const filename = `${gdata.codigo}_${itemId}_${pi}.jpg`;
-    formData.append('file', blob, filename);
-    formData.append('filename', filename);
 
-    const uploadRes = await fetch(
-      `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${airtableId}/uploadAttachment/Fotos`,
+    // Mismo método que seguimiento_v6: content.airtable.com + JSON body
+    const res = await fetch(
+      `https://content.airtable.com/v0/${AT_BASE_ID}/${airtableId}/${encodeURIComponent('Fotos')}/uploadAttachment`,
       {
         method: 'POST',
-        headers: { Authorization: `Bearer ${AT_TOKEN}` },
-        body: formData
+        headers: {
+          'Authorization': `Bearer ${AT_TOKEN}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          filename: filename,
+          contentType: 'image/jpeg',
+          file: base64
+        })
       }
     );
-    if(!uploadRes.ok){
-      const err = await uploadRes.json();
-      console.warn('Error subiendo foto a Airtable:', err);
+    const data = await res.json();
+    if(!res.ok){
+      console.warn('Error subiendo foto a Airtable:', data?.error?.message || data);
       return false;
     }
     return true;
@@ -1319,17 +1303,22 @@ async function submit(){
       let itemsMap = {};
       try {
         const resData = await res.json();
-        // itemsMap: { "GRN-2026-300_cm01": "recXXXX", ... }
+        // n8n devuelve: { ok: true, proyectoAirtableId: "recXXX", items: [ {id:"recYYY", fields:{"ID ítem":"COD_cm01",...}}, ... ] }
         if(Array.isArray(resData.items)){
           resData.items.forEach(i => {
+            // Formato A: { itemId, airtableId } — si n8n fue configurado así
             if(i.itemId && i.airtableId){
-              // El itemId que devuelve n8n tiene formato "codigo_itemId"
-              // Extraemos solo el itemId (ej. "cm01") para guardarlo en state
               const shortId = i.itemId.includes('_') ? i.itemId.split('_').slice(1).join('_') : i.itemId;
               if(state[shortId]) state[shortId].airtableRecordId = i.airtableId;
             }
+            // Formato B: record Airtable directo { id:"recXXX", fields:{"ID ítem":"COD_cm01"} }
+            else if(i.id && i.fields && i.fields['ID ítem']){
+              const fullItemId = i.fields['ID ítem'] || '';
+              const shortId = fullItemId.includes('_') ? fullItemId.split('_').slice(1).join('_') : fullItemId;
+              if(shortId && state[shortId]) state[shortId].airtableRecordId = i.id;
+            }
           });
-          save(); // Guardar los airtableRecordId en localStorage
+          save();
         }
       } catch(e){ console.warn('No se pudo parsear respuesta del webhook', e); }
 
