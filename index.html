@@ -616,36 +616,40 @@ async function uploadPhotoToAirtable(itemId, pi, base64DataUrl){
     const base64 = base64DataUrl.includes(',') ? base64DataUrl.split(',')[1] : base64DataUrl;
     const filename = `${gdata.codigo}_${itemId}_${pi}.jpg`;
 
-    // ── Si el slot ya tiene un attachment previo, eliminarlo primero ──────────
-    const existingAttId = state[itemId]?.photoAttachmentIds?.[pi];
-    if(existingAttId){
-      // Para eliminar un attachment individual: PATCH con el campo Fotos
-      // conteniendo solo los attachments que NO son el que vamos a reemplazar
-      const getRes = await fetch(
-        `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${airtableId}?fields%5B%5D=Fotos`,
-        { headers: { Authorization: `Bearer ${AT_TOKEN}` } }
-      );
-      if(getRes.ok){
-        const getRec = await getRes.json();
-        const allAtts = getRec?.fields?.Fotos || [];
-        // Filtrar fuera el attachment del slot que vamos a reemplazar
-        const remaining = allAtts
-          .filter(att => att.id !== existingAttId)
-          .map(att => ({ url: att.url })); // Airtable solo acepta {url} en PATCH
-        await fetch(
-          `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${airtableId}`,
-          {
-            method: 'PATCH',
-            headers: { Authorization: `Bearer ${AT_TOKEN}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fields: { 'Fotos': remaining } })
-          }
-        );
-      }
-      // Limpiar el ID guardado del slot
-      delete state[itemId].photoAttachmentIds[pi];
+    // ── Paso 1: Leer attachments actuales del record ──────────────────────────
+    const getRes = await fetch(
+      `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${airtableId}?fields%5B%5D=Fotos`,
+      { headers: { Authorization: `Bearer ${AT_TOKEN}` } }
+    );
+    let currentAtts = [];
+    if(getRes.ok){
+      const getRec = await getRes.json();
+      currentAtts = getRec?.fields?.Fotos || [];
     }
 
-    // ── Subir la foto nueva ───────────────────────────────────────────────────
+    // ── Paso 2: Si ya hay una foto para este slot (mismo nombre base), eliminarla
+    // El nombre del slot es siempre {codigo}_{itemId}_{pi}.jpg
+    const slotBasename = `${gdata.codigo}_${itemId}_${pi}`;
+    const attToRemove = currentAtts.find(att =>
+      (att.filename || '').startsWith(slotBasename)
+    );
+
+    if(attToRemove){
+      // PATCH con todos los attachments excepto el del slot a reemplazar
+      const remaining = currentAtts
+        .filter(att => att.id !== attToRemove.id)
+        .map(att => ({ url: att.url }));
+      await fetch(
+        `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${airtableId}`,
+        {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${AT_TOKEN}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fields: { 'Fotos': remaining } })
+        }
+      );
+    }
+
+    // ── Paso 3: Subir la foto nueva ───────────────────────────────────────────
     const res = await fetch(
       `https://content.airtable.com/v0/${AT_BASE_ID}/${airtableId}/${encodeURIComponent('Fotos')}/uploadAttachment`,
       {
@@ -660,10 +664,24 @@ async function uploadPhotoToAirtable(itemId, pi, base64DataUrl){
       return false;
     }
 
-    // Guardar el nuevo attachment ID en el slot
-    if(data?.id){
+    // ── Paso 4: Leer el record actualizado y sincronizar photoAttachmentIds ───
+    const syncRes = await fetch(
+      `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${airtableId}?fields%5B%5D=Fotos`,
+      { headers: { Authorization: `Bearer ${AT_TOKEN}` } }
+    );
+    if(syncRes.ok){
+      const syncRec = await syncRes.json();
+      const updatedAtts = syncRec?.fields?.Fotos || [];
       if(!state[itemId].photoAttachmentIds) state[itemId].photoAttachmentIds = {};
-      state[itemId].photoAttachmentIds[pi] = data.id;
+      // Reconstruir el mapa slot → attachmentId basado en nombre de archivo
+      updatedAtts.forEach(att => {
+        const fname = att.filename || '';
+        // Extraer el índice del slot del nombre: {codigo}_{itemId}_{pi}.jpg
+        const match = fname.match(/_(\d+)\.jpg$/i);
+        if(match){
+          state[itemId].photoAttachmentIds[parseInt(match[1])] = att.id;
+        }
+      });
       save();
     }
     return true;
