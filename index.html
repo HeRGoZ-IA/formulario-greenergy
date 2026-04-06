@@ -554,7 +554,8 @@ let proyectoRecId   = null;    // record ID del proyecto en la tabla Proyectos
 // Cola de cambios pendientes para sincronizar cuando vuelva la señal
 // Formato: [ { type:'item'|'gdata', itemId?, fields:{} } ]
 let _pendingSync    = [];
-let _syncTimer      = null;    // debounce timer para PATCH de campos
+let _syncTimer      = null;    // debounce timer para PATCH de campos de ítem
+let _gdataTimer     = null;    // debounce timer para PATCH de datos generales
 
 function initState(){
   Object.values(ITEMS).flat().forEach(it=>{
@@ -695,8 +696,7 @@ async function ensureProyectoCreado(){
 }
 
 // ─── PATCH EN TIEMPO REAL — CAMPOS DE ÍTEM ──────────────────────────────────
-// Regla merge: solo escribir campos que estén vacíos en Airtable
-// (Airtable es fuente de verdad — no sobreescribir valores existentes)
+// ─── PATCH EN TIEMPO REAL — CAMPOS DE ÍTEM ──────────────────────────────────
 async function patchItemToAirtable(itemId){
   if(!AT_TOKEN || !proyectoCreado || !online) return;
   const st = state[itemId];
@@ -705,73 +705,57 @@ async function patchItemToAirtable(itemId){
   const condMap = {good:'Bueno', regular:'Regular', bad:'Malo', absent:'Ausente'};
   const fields = {};
 
+  // Condición — siempre escribir si existe
   if(st.cond) fields['Condición'] = condMap[st.cond] || st.cond;
 
-  // Campos técnicos — serializar como JSON
+  // Campos técnicos — serializar TODOS los campos actuales como JSON completo
   const camposFiltrados = {...(st.fields || {})};
   delete camposFiltrados['_obs'];
-  if(Object.keys(camposFiltrados).length > 0){
-    fields['Campos técnicos'] = JSON.stringify(camposFiltrados);
-  }
-  if(st.fields['_obs']) fields['Observaciones'] = st.fields['_obs'];
+  // Siempre escribir el JSON completo (sobreescribe el anterior con el estado actual)
+  fields['Campos técnicos'] = Object.keys(camposFiltrados).length > 0
+    ? JSON.stringify(camposFiltrados)
+    : '{}';
 
-  if(!Object.keys(fields).length) return;
+  // Observaciones
+  fields['Observaciones'] = st.fields['_obs'] || '';
 
   try {
-    // Merge: leer primero para no sobreescribir datos de otro técnico
-    const getRes = await fetch(
-      `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${st.airtableRecordId}`,
-      { headers: { Authorization: `Bearer ${AT_TOKEN}` } }
-    );
-    if(!getRes.ok) return;
-    const getRec = await getRes.json();
-    const existing = getRec.fields || {};
-
-    // Solo enviar campos que estén vacíos o sin valor en Airtable
-    const toWrite = {};
-    Object.entries(fields).forEach(([k, v]) => {
-      const cur = existing[k];
-      // Escribir si: Airtable está vacío O el valor es exactamente '{}' (JSON vacío)
-      if(!cur || cur === '{}' || cur === '' || cur === null){
-        toWrite[k] = v;
-      }
-      // Condición: siempre actualizar (el técnico puede corregirla)
-      if(k === 'Condición') toWrite[k] = v;
-    });
-
-    if(!Object.keys(toWrite).length) return;
-
     await fetch(
       `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${st.airtableRecordId}`,
       {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${AT_TOKEN}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: toWrite })
+        body: JSON.stringify({ fields })
       }
     );
   } catch(e){
-    // Guardar en cola para sincronizar después
-    _pendingSync.push({ type: 'item', itemId, fields });
+    _pendingSync.push({ type: 'item', itemId });
   }
 }
 
 // ─── PATCH EN TIEMPO REAL — DATOS GENERALES DEL PROYECTO ────────────────────
 async function patchGdataToAirtable(){
-  if(!AT_TOKEN || !proyectoRecId || !online) return;
+  if(!AT_TOKEN || !online) return;
+  // Si proyectoRecId aún no está disponible, reintentarlo en 2s
+  if(!proyectoRecId){
+    setTimeout(patchGdataToAirtable, 2000);
+    return;
+  }
   const fields = {};
-  if(gdata.cliente)  fields['Cliente']         = gdata.cliente;
-  if(gdata.dir)      fields['Dirección']        = gdata.dir;
-  if(gdata.torre)    fields['Torre / Bloque']   = gdata.torre;
-  if(gdata.ascensor) fields['Ascensor']         = gdata.ascensor;
-  if(gdata.tecnico)  fields['Técnico']          = gdata.tecnico;
-  if(gdata.fecha)    fields['Fecha visita']     = gdata.fecha;
-  if(gdata.marca)    fields['Marca original']   = gdata.marca;
-  if(gdata.paradas)  fields['N.° paradas']      = Number(gdata.paradas) || null;
-  if(gdata.cap)      fields['Capacidad (kg)']   = Number(gdata.cap) || null;
-  if(gdata.vel)      fields['Velocidad (m/s)']  = gdata.vel;
-  if(gdata.traccion) fields['Tracción']         = gdata.traccion;
-  if(gdata.tension)  fields['Tensión']          = gdata.tension;
-  if(gdata.puertas)  fields['Puertas']          = gdata.puertas;
+  // Siempre enviar todos los campos con valor (sobreescribe lo existente)
+  if(gdata.cliente  !== undefined) fields['Cliente']         = gdata.cliente  || '';
+  if(gdata.dir      !== undefined) fields['Dirección']       = gdata.dir      || '';
+  if(gdata.torre    !== undefined) fields['Torre / Bloque']  = gdata.torre    || '';
+  if(gdata.ascensor !== undefined) fields['Ascensor']        = gdata.ascensor || '';
+  if(gdata.tecnico  !== undefined) fields['Técnico']         = gdata.tecnico  || '';
+  if(gdata.fecha)                  fields['Fecha visita']    = gdata.fecha;
+  if(gdata.marca    !== undefined) fields['Marca original']  = gdata.marca    || '';
+  if(gdata.paradas) fields['N.° paradas']     = Number(gdata.paradas) || null;
+  if(gdata.cap)     fields['Capacidad (kg)']  = Number(gdata.cap)     || null;
+  if(gdata.vel      !== undefined) fields['Velocidad (m/s)'] = gdata.vel      || '';
+  if(gdata.traccion) fields['Tracción']  = gdata.traccion;
+  if(gdata.tension)  fields['Tensión']   = gdata.tension;
+  if(gdata.puertas)  fields['Puertas']   = gdata.puertas;
   if(!Object.keys(fields).length) return;
   try {
     await fetch(
@@ -783,7 +767,7 @@ async function patchGdataToAirtable(){
       }
     );
   } catch(e){
-    _pendingSync.push({ type: 'gdata', fields });
+    _pendingSync.push({ type: 'gdata' });
   }
 }
 
@@ -810,90 +794,106 @@ function schedulePatch(itemId){
   _syncTimer = setTimeout(() => patchItemToAirtable(itemId), 1500);
 }
 
+// ─── MUTEX PARA SUBIDA DE FOTOS (evitar condición de carrera) ───────────────
+// Un lock por airtableRecordId — garantiza que no haya dos uploads simultáneos
+// al mismo record que puedan leer el mismo estado "antes de eliminar"
+const _uploadLocks = {}; // { airtableId: Promise }
+
+async function withUploadLock(airtableId, fn){
+  // Esperar a que el lock anterior termine antes de empezar
+  const prev = _uploadLocks[airtableId] || Promise.resolve();
+  let resolveCurrent;
+  _uploadLocks[airtableId] = new Promise(r => { resolveCurrent = r; });
+  try {
+    await prev;       // esperar al anterior
+    return await fn();
+  } finally {
+    resolveCurrent(); // liberar el lock actual
+    // Limpiar si no hay más uploads pendientes
+    if(_uploadLocks[airtableId] && resolveCurrent) delete _uploadLocks[airtableId];
+  }
+}
+
 // ─── SUBIDA DIRECTA DE FOTO A AIRTABLE ──────────────────────────────────────
 async function uploadPhotoToAirtable(itemId, pi, base64DataUrl){
   if(!AT_TOKEN){ console.warn('Sin token — foto guardada localmente'); return false; }
-
   const airtableId = state[itemId]?.airtableRecordId;
   if(!airtableId) return false;
 
-  try {
-    const base64 = base64DataUrl.includes(',') ? base64DataUrl.split(',')[1] : base64DataUrl;
-    const filename = `${gdata.codigo}_${itemId}_${pi}.jpg`;
+  // Usar el lock para serializar uploads al mismo record
+  return withUploadLock(airtableId, async () => {
+    try {
+      const base64 = base64DataUrl.includes(',') ? base64DataUrl.split(',')[1] : base64DataUrl;
+      const filename = `${gdata.codigo}_${itemId}_${pi}.jpg`;
 
-    // ── Paso 1: Leer attachments actuales del record ──────────────────────────
-    const getRes = await fetch(
-      `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${airtableId}?fields%5B%5D=Fotos`,
-      { headers: { Authorization: `Bearer ${AT_TOKEN}` } }
-    );
-    let currentAtts = [];
-    if(getRes.ok){
-      const getRec = await getRes.json();
-      currentAtts = getRec?.fields?.Fotos || [];
-    }
+      // ── Paso 1: Leer attachments actuales del record ──────────────────────────
+      const getRes = await fetch(
+        `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${airtableId}?fields%5B%5D=Fotos`,
+        { headers: { Authorization: `Bearer ${AT_TOKEN}` } }
+      );
+      let currentAtts = [];
+      if(getRes.ok){
+        const getRec = await getRes.json();
+        currentAtts = getRec?.fields?.Fotos || [];
+      }
 
-    // ── Paso 2: Si ya hay una foto para este slot (mismo nombre base), eliminarla
-    // El nombre del slot es siempre {codigo}_{itemId}_{pi}.jpg
-    const slotBasename = `${gdata.codigo}_${itemId}_${pi}`;
-    const attToRemove = currentAtts.find(att =>
-      (att.filename || '').startsWith(slotBasename)
-    );
+      // ── Paso 2: Eliminar foto del mismo slot si existe (por nombre) ───────────
+      const slotBasename = `${gdata.codigo}_${itemId}_${pi}`;
+      const attsToRemove = currentAtts.filter(att =>
+        (att.filename || '').startsWith(slotBasename)
+      );
 
-    if(attToRemove){
-      // PATCH con todos los attachments excepto el del slot a reemplazar
-      const remaining = currentAtts
-        .filter(att => att.id !== attToRemove.id)
-        .map(att => ({ url: att.url }));
-      await fetch(
-        `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${airtableId}`,
+      if(attsToRemove.length > 0){
+        const remaining = currentAtts
+          .filter(att => !attsToRemove.find(r => r.id === att.id))
+          .map(att => ({ url: att.url }));
+        await fetch(
+          `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${airtableId}`,
+          {
+            method: 'PATCH',
+            headers: { Authorization: `Bearer ${AT_TOKEN}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields: { 'Fotos': remaining } })
+          }
+        );
+      }
+
+      // ── Paso 3: Subir la foto nueva ───────────────────────────────────────────
+      const res = await fetch(
+        `https://content.airtable.com/v0/${AT_BASE_ID}/${airtableId}/${encodeURIComponent('Fotos')}/uploadAttachment`,
         {
-          method: 'PATCH',
-          headers: { Authorization: `Bearer ${AT_TOKEN}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fields: { 'Fotos': remaining } })
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${AT_TOKEN}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename, contentType: 'image/jpeg', file: base64 })
         }
       );
-    }
-
-    // ── Paso 3: Subir la foto nueva ───────────────────────────────────────────
-    const res = await fetch(
-      `https://content.airtable.com/v0/${AT_BASE_ID}/${airtableId}/${encodeURIComponent('Fotos')}/uploadAttachment`,
-      {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${AT_TOKEN}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename, contentType: 'image/jpeg', file: base64 })
+      const data = await res.json();
+      if(!res.ok){
+        console.warn('Error subiendo foto:', data?.error?.message || data);
+        return false;
       }
-    );
-    const data = await res.json();
-    if(!res.ok){
-      console.warn('Error subiendo foto a Airtable:', data?.error?.message || data);
+
+      // ── Paso 4: Sincronizar photoAttachmentIds desde el record actualizado ────
+      const syncRes = await fetch(
+        `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${airtableId}?fields%5B%5D=Fotos`,
+        { headers: { Authorization: `Bearer ${AT_TOKEN}` } }
+      );
+      if(syncRes.ok){
+        const syncRec = await syncRes.json();
+        const updatedAtts = syncRec?.fields?.Fotos || [];
+        if(!state[itemId].photoAttachmentIds) state[itemId].photoAttachmentIds = {};
+        state[itemId].photoAttachmentIds = {};
+        updatedAtts.forEach(att => {
+          const match = (att.filename || '').match(/_(\d+)\.jpg$/i);
+          if(match) state[itemId].photoAttachmentIds[parseInt(match[1])] = att.id;
+        });
+        save();
+      }
+      return true;
+    } catch(e){
+      console.warn('Error en uploadPhotoToAirtable:', e);
       return false;
     }
-
-    // ── Paso 4: Leer el record actualizado y sincronizar photoAttachmentIds ───
-    const syncRes = await fetch(
-      `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${airtableId}?fields%5B%5D=Fotos`,
-      { headers: { Authorization: `Bearer ${AT_TOKEN}` } }
-    );
-    if(syncRes.ok){
-      const syncRec = await syncRes.json();
-      const updatedAtts = syncRec?.fields?.Fotos || [];
-      if(!state[itemId].photoAttachmentIds) state[itemId].photoAttachmentIds = {};
-      // Reconstruir el mapa slot → attachmentId basado en nombre de archivo
-      updatedAtts.forEach(att => {
-        const fname = att.filename || '';
-        // Extraer el índice del slot del nombre: {codigo}_{itemId}_{pi}.jpg
-        const match = fname.match(/_(\d+)\.jpg$/i);
-        if(match){
-          state[itemId].photoAttachmentIds[parseInt(match[1])] = att.id;
-        }
-      });
-      save();
-    }
-    return true;
-  } catch(e){
-    console.warn('Error en uploadPhotoToAirtable:', e);
-    return false;
-  }
+  });
 }
 
 // Sube masivamente todas las fotos acumuladas en photoThumbs después del submit
@@ -1473,11 +1473,9 @@ function buildAscId(){
 function sg(key,val){
   gdata[key]=val;
   save();
-  // Guardar datos generales en Airtable con debounce
-  if(proyectoCreado && proyectoRecId){
-    clearTimeout(_syncTimer);
-    _syncTimer = setTimeout(patchGdataToAirtable, 1500);
-  }
+  // Guardar datos generales en Airtable con debounce (timer separado)
+  clearTimeout(_gdataTimer);
+  _gdataTimer = setTimeout(patchGdataToAirtable, 1500);
 }
 
 function togCfg(key,togId){
