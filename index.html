@@ -1011,6 +1011,8 @@ async function iniciarRegistro(){
       proyectoCreado=true;
       unlockTabs();
       await loadProyectoRecId();
+      // Cargar los 69 airtableRecordIds desde Airtable para habilitar guardado en tiempo real
+      await loadFromAirtable();
       toast('Proyecto creado ✓ — guardado automático activo');
     }
   }catch(e){
