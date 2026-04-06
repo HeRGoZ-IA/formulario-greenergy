@@ -1400,9 +1400,12 @@ function toast(msg){
 
 // ─── LOGIN / TOKEN ────────────────────────────────────────────────────────────
 function showTokenScreen(){
-  document.getElementById('tabs').style.display='none';
-  document.getElementById('btm').style.display='none';
-  document.getElementById('offline-banner').style.display='none';
+  const tabs = document.getElementById('tabs');
+  const btm  = document.getElementById('btm');
+  const banner = document.getElementById('offline-banner');
+  if(tabs)   tabs.style.display='none';
+  if(btm)    btm.style.display='none';
+  if(banner) banner.style.display='none';
   document.getElementById('main').innerHTML=`
     <div style="display:flex;align-items:center;justify-content:center;min-height:70vh;padding:24px">
       <div style="background:white;border:1.5px solid var(--n100);border-radius:var(--r-xl);padding:28px 24px;width:100%;max-width:400px;box-shadow:var(--sh-lg)">
@@ -1456,8 +1459,10 @@ async function saveToken(){
 }
 
 function startApp(){
-  document.getElementById('tabs').style.display='';
-  document.getElementById('btm').style.display='';
+  const tabs = document.getElementById('tabs');
+  const btm  = document.getElementById('btm');
+  if(tabs) tabs.style.display='';
+  if(btm)  btm.style.display='';
   updateConn();
   const existing=localStorage.getItem(SK);
   if(existing){
