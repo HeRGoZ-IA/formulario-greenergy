@@ -708,16 +708,34 @@ async function patchItemToAirtable(itemId){
   // Condición — siempre escribir si existe
   if(st.cond) fields['Condición'] = condMap[st.cond] || st.cond;
 
-  // Campos técnicos — serializar TODOS los campos actuales como JSON completo
-  const camposFiltrados = {...(st.fields || {})};
-  delete camposFiltrados['_obs'];
-  // Siempre escribir el JSON completo (sobreescribe el anterior con el estado actual)
-  fields['Campos técnicos'] = Object.keys(camposFiltrados).length > 0
-    ? JSON.stringify(camposFiltrados)
+  // Campos técnicos — serializar en el ORDEN definido en ITEMS, no en orden de llenado
+  const itemDef = Object.values(ITEMS).flat().find(i => i.id === itemId);
+  const camposOrdenados = {};
+  if(itemDef){
+    itemDef.fields.flat().filter(Boolean).forEach(fieldName => {
+      if(fieldName && st.fields[fieldName] !== undefined)
+        camposOrdenados[fieldName] = st.fields[fieldName];
+    });
+  } else {
+    // Fallback: usar todos los campos menos _obs
+    Object.entries(st.fields || {}).forEach(([k,v]) => {
+      if(k !== '_obs') camposOrdenados[k] = v;
+    });
+  }
+  fields['Campos técnicos'] = Object.keys(camposOrdenados).length > 0
+    ? JSON.stringify(camposOrdenados)
     : '{}';
 
   // Observaciones
   fields['Observaciones'] = st.fields['_obs'] || '';
+
+  // N.° fotos cargadas — contar slots con foto real (no 'uploaded' pendiente)
+  const itemDefF = Object.values(ITEMS).flat().find(i => i.id === itemId);
+  const maxSlots = itemDefF ? itemDefF.photos.length : 99;
+  const fotosCargadas = Object.entries(st.photos || {})
+    .filter(([pi, v]) => v && parseInt(pi) < maxSlots)
+    .length;
+  fields['N.° fotos cargadas'] = fotosCargadas;
 
   try {
     await fetch(
@@ -749,7 +767,7 @@ async function patchGdataToAirtable(){
   if(gdata.ascensor !== undefined) fields['Ascensor']        = gdata.ascensor || '';
   if(gdata.tecnico  !== undefined) fields['Técnico']         = gdata.tecnico  || '';
   if(gdata.fecha)                  fields['Fecha visita']    = gdata.fecha;
-  if(gdata.marca    !== undefined) fields['Marca original']  = gdata.marca    || '';
+  if(gdata.marca    !== undefined) fields['Marca del Ascensor'] = gdata.marca    || '';
   if(gdata.paradas) fields['N.° paradas']     = Number(gdata.paradas) || null;
   if(gdata.cap)     fields['Capacidad (kg)']  = Number(gdata.cap)     || null;
   if(gdata.vel      !== undefined) fields['Velocidad (m/s)'] = gdata.vel      || '';
@@ -1355,84 +1373,176 @@ function chkAl(id,field,value,alId){
   if(show) toast('⚠ Valor fuera de rango — verificar NTC');
 }
 
-function trigPh(id,pi){
-  const inp=document.getElementById(`phi-${id}-${pi}`);
+// ─── GESTIÓN DE FOTOS — patrón seguimiento_v6 ───────────────────────────────
+
+async function fileToBase64Content(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      resolve(result.includes(',') ? result.split(',')[1] : result);
+    };
+    reader.onerror = () => reject(new Error('No se pudo leer la foto'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function compressImageIfNeeded(file, desiredFilename=''){
+  const targetName = desiredFilename || file.name || 'foto.jpg';
+  if(!String(file.type||'').startsWith('image/') || file.size <= 4_500_000){
+    return new File([file], targetName, {type: file.type || 'image/jpeg'});
+  }
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload  = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('No se pudo leer la foto'));
+    reader.readAsDataURL(file);
+  });
+  const img = await new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload  = () => resolve(image);
+    image.onerror = () => reject(new Error('No se pudo procesar la foto'));
+    image.src = dataUrl;
+  });
+  const maxDim = 1600;
+  let {width, height} = img;
+  if(width > height && width > maxDim){ height = Math.round(height*(maxDim/width)); width = maxDim; }
+  else if(height >= width && height > maxDim){ width = Math.round(width*(maxDim/height)); height = maxDim; }
+  const canvas = document.createElement('canvas');
+  canvas.width = width; canvas.height = height;
+  canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+  let quality = 0.86;
+  let blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', quality));
+  while(blob && blob.size > 4_800_000 && quality > 0.45){
+    quality -= 0.08;
+    blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', quality));
+  }
+  if(!blob) throw new Error('No se pudo comprimir la foto');
+  return new File([blob], targetName.replace(/\.[^.]+$/, '') + '.jpg', {type: 'image/jpeg'});
+}
+
+function trigPh(id, pi){
+  const inp = document.getElementById(`phi-${id}-${pi}`);
   if(inp) inp.click();
 }
 
-function capPh(id,pi,inp){
+async function capPh(id, pi, inp){
   if(!inp.files?.length) return;
-  const file=inp.files[0];
-  if(!state[id]) state[id]={cond:null,fields:{},photos:{}};
-  state[id].photos[pi]=file.name;
-  if(!state[id].photoThumbs) state[id].photoThumbs={};
+  const rawFile = inp.files[0];
+  inp.value = '';
+  if(!state[id]) state[id] = {cond:null, fields:{}, photos:{}};
 
-  const reader=new FileReader();
-  reader.onload=e=>{
-    const img=new Image();
-    img.onload=()=>{
-      // Full-res version (max 800x600) para subir a Airtable
-      const canvas=document.createElement('canvas');
-      const maxW=800,maxH=600;
-      let w=img.width,h=img.height;
-      if(w>maxW){h=Math.round(h*maxW/w);w=maxW;}
-      if(h>maxH){w=Math.round(w*maxH/h);h=maxH;}
-      canvas.width=w;canvas.height=h;
-      canvas.getContext('2d').drawImage(img,0,0,w,h);
-      const fullThumb=canvas.toDataURL('image/jpeg',0.75);
-      // Thumbnail pequeño solo para mostrar en la UI
-      const dCanvas=document.createElement('canvas');
-      const dW=Math.min(w,156),dH=Math.round(h*(dW/w));
-      dCanvas.width=dW;dCanvas.height=dH;
-      dCanvas.getContext('2d').drawImage(img,0,0,dW,dH);
-      const displayThumb=dCanvas.toDataURL('image/jpeg',0.7);
-      state[id].photoThumbs[pi]=fullThumb;
-      if(!state[id].photoDisplay) state[id].photoDisplay={};
-      state[id].photoDisplay[pi]=displayThumb;
-      const box=document.getElementById(`phbox-${id}-${pi}`);
-      if(box){
-        box.classList.add('shot');
-        box.innerHTML=`<img src="${displayThumb}" alt="foto"><div class="ph-del" onclick="event.stopPropagation();delPh('${id}',${pi})">✕</div>`;
-      }
-      updateChip(id);
-      updateProg();
-      save();
-      // Intentar subida directa a Airtable si el formulario ya fue enviado
-      if(online && state[id]?.airtableRecordId && AT_TOKEN){
-        toast('Foto capturada — subiendo a Airtable...');
-        uploadPhotoToAirtable(id, pi, fullThumb).then(ok=>{
-          if(ok){
-            delete state[id].photoThumbs[pi];
-            save();
-            toast('Foto guardada en Airtable ✓');
-          } else {
-            toast('Foto guardada localmente — se subirá al enviar');
-          }
-        });
-      } else {
-        toast('Foto guardada ✓ — se subirá al enviar el formulario');
-      }
-    };
-    img.src=e.target.result;
-  };
-  reader.readAsDataURL(file);
-}
+  const filename = `${gdata.codigo}_${id}_${pi}.jpg`;
+  state[id].photos[pi] = filename;
 
-function delPh(id,pi){
-  if(!state[id]) return;
-  delete state[id].photos[pi];
-  if(state[id].photoThumbs) delete state[id].photoThumbs[pi];
-  if(state[id].photoDisplay) delete state[id].photoDisplay[pi];
-  const box=document.getElementById(`phbox-${id}-${pi}`);
+  // Preview inmediato con objectURL
+  const previewUrl = URL.createObjectURL(rawFile);
+  if(!state[id].photoPreviewUrls) state[id].photoPreviewUrls = {};
+  // Revocar preview anterior si existe
+  if(state[id].photoPreviewUrls[pi]) try{ URL.revokeObjectURL(state[id].photoPreviewUrls[pi]); }catch(_){}
+  state[id].photoPreviewUrls[pi] = previewUrl;
+
+  const box = document.getElementById(`phbox-${id}-${pi}`);
   if(box){
-    box.classList.remove('shot');
-    box.innerHTML=`<div class="ph-ico">⊞</div><div class="ph-lbl">Tomar</div>`;
+    box.classList.add('shot');
+    box.innerHTML = `<img src="${previewUrl}" alt="foto" style="width:100%;height:100%;object-fit:cover;border-radius:calc(var(--r) - 2px)"><div class="ph-del" onclick="event.stopPropagation();delPh('${id}',${pi})">\u2715</div>`;
   }
-  const inp=document.getElementById(`phi-${id}-${pi}`);
-  if(inp) inp.value='';
   updateChip(id);
   updateProg();
   save();
+
+  if(online && state[id]?.airtableRecordId && AT_TOKEN){
+    toast('Foto capturada \u2014 subiendo a Airtable...');
+    try {
+      const prepared = await compressImageIfNeeded(rawFile, filename);
+      const base64   = await fileToBase64Content(prepared);
+      const ok = await uploadPhotoToAirtable(id, pi, base64);
+      if(ok){
+        // Limpiar thumb local — ya está en Airtable
+        if(state[id].photoThumbs) delete state[id].photoThumbs[pi];
+        save();
+        patchItemToAirtable(id); // actualizar N.° fotos cargadas
+        toast('Foto guardada en Airtable \u2713');
+      } else {
+        // Guardar para subir luego
+        if(!state[id].photoThumbs) state[id].photoThumbs = {};
+        const b64safe = await fileToBase64Content(await compressImageIfNeeded(rawFile, filename));
+        state[id].photoThumbs[pi] = 'data:image/jpeg;base64,' + b64safe;
+        save();
+        toast('Foto guardada localmente \u2014 se subir\u00e1 al enviar');
+      }
+    } catch(e){
+      console.warn('capPh error:', e);
+      toast('Error procesando foto');
+    }
+  } else {
+    // Sin conexi\u00f3n: comprimir y guardar localmente
+    try {
+      const prepared = await compressImageIfNeeded(rawFile, filename);
+      const b64 = await fileToBase64Content(prepared);
+      if(!state[id].photoThumbs) state[id].photoThumbs = {};
+      state[id].photoThumbs[pi] = 'data:image/jpeg;base64,' + b64;
+      save();
+    } catch(e){ console.warn('capPh compress error:', e); }
+    toast('Foto guardada \u2713 \u2014 se subir\u00e1 al enviar el formulario');
+  }
+}
+
+async function delPh(id, pi){
+  if(!state[id]) return;
+  const airtableId = state[id]?.airtableRecordId;
+
+  // Revocar objectURL preview
+  const prev = state[id].photoPreviewUrls?.[pi];
+  if(prev) try{ URL.revokeObjectURL(prev); }catch(_){}
+
+  // Limpiar estado local completamente
+  delete state[id].photos[pi];
+  if(state[id].photoThumbs)       delete state[id].photoThumbs[pi];
+  if(state[id].photoPreviewUrls)  delete state[id].photoPreviewUrls[pi];
+  if(state[id].photoAttachmentIds) delete state[id].photoAttachmentIds[pi];
+
+  const box = document.getElementById(`phbox-${id}-${pi}`);
+  if(box){
+    box.classList.remove('shot');
+    box.innerHTML = `<div class="ph-ico">\u229e</div><div class="ph-lbl">Tomar</div>`;
+  }
+  const inp2 = document.getElementById(`phi-${id}-${pi}`);
+  if(inp2) inp2.value = '';
+  updateChip(id);
+  updateProg();
+  save();
+
+  // Borrar de Airtable — buscar por nombre de slot
+  if(online && AT_TOKEN && airtableId){
+    try {
+      const slotPrefix = `${gdata.codigo}_${id}_${pi}`;
+      const getRes = await fetch(
+        `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${airtableId}?fields%5B%5D=Fotos`,
+        { headers: { Authorization: `Bearer ${AT_TOKEN}` } }
+      );
+      if(getRes.ok){
+        const getRec  = await getRes.json();
+        const allAtts = getRec?.fields?.Fotos || [];
+        const toKeep  = allAtts
+          .filter(att => !(att.filename || '').startsWith(slotPrefix))
+          .map(att => ({ url: att.url }));
+        if(toKeep.length < allAtts.length){
+          await fetch(
+            `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${airtableId}`,
+            {
+              method: 'PATCH',
+              headers: { Authorization: `Bearer ${AT_TOKEN}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ fields: { 'Fotos': toKeep } })
+            }
+          );
+          patchItemToAirtable(id); // actualizar N.° fotos cargadas
+          toast('Foto eliminada \u2713');
+          return;
+        }
+      }
+    } catch(e){ console.warn('delPh Airtable error:', e); }
+  }
   toast('Foto eliminada');
 }
 
@@ -1980,7 +2090,8 @@ async function loadProjectDataFromAirtable(){
     if(f['Ascensor'] && !gdata.ascensor)        gdata.ascensor  = f['Ascensor'];
     if(f['Técnico'] && !gdata.tecnico)          gdata.tecnico   = f['Técnico'];
     if(f['Fecha visita'] && !gdata.fecha)       gdata.fecha     = f['Fecha visita'];
-    if(f['Marca original'] && !gdata.marca)     gdata.marca     = f['Marca original'];
+    if(f['Marca del Ascensor'] && !gdata.marca)  gdata.marca     = f['Marca del Ascensor'];
+    if(f['Marca original'] && !gdata.marca)      gdata.marca     = f['Marca original']; // fallback
     if(f['N.° paradas'] && !gdata.paradas)      gdata.paradas   = String(f['N.° paradas']);
     if(f['Capacidad (kg)'] && !gdata.cap)       gdata.cap       = String(f['Capacidad (kg)']);
     if(f['Velocidad (m/s)'] && !gdata.vel)      gdata.vel       = String(f['Velocidad (m/s)']);
