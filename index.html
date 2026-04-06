@@ -1182,8 +1182,9 @@ function delPh(id,pi){
 function updateChip(id){
   const it=Object.values(ITEMS).flat().find(i=>i.id===id);
   if(!it) return;
-  const pd=Object.values(state[id]?.photos||{}).filter(Boolean).length;
+  // Cap: nunca contar más fotos de las permitidas
   const pt=it.photos.length;
+  const pd=Math.min(Object.values(state[id]?.photos||{}).filter(Boolean).length, pt);
   const card=document.getElementById('card-'+id);
   if(!card) return;
   const chip=card.querySelector('.ph-chip');
@@ -1588,21 +1589,73 @@ async function loadFromAirtable(){
       const obs = rec.fields['Observaciones'] || '';
       if(obs) state[shortId].fields['_obs'] = obs;
 
-      // Fotos ya cargadas — guardar attachment IDs por slot para poder reemplazarlas
+      // Fotos ya cargadas — asignar por slot basado en nombre de archivo
       const fotosArr = rec.fields['Fotos'] || [];
+      // Obtener el máximo de fotos permitidas para este ítem
+      const itemDef = Object.values(ITEMS).flat().find(i => i.id === shortId);
+      const maxSlots = itemDef ? itemDef.photos.length : 99;
+
+      // Limpiar slots previos para evitar acumulaciones
+      state[shortId].photos = {};
+      if(!state[shortId].photoAttachmentIds) state[shortId].photoAttachmentIds = {};
+      else state[shortId].photoAttachmentIds = {};
+
       if(Array.isArray(fotosArr) && fotosArr.length > 0){
-        if(!state[shortId].photoAttachmentIds) state[shortId].photoAttachmentIds = {};
-        fotosArr.forEach((att, i) => {
-          // Marcar el slot como ocupado
-          state[shortId].photos[i] = 'uploaded';
-          // Guardar el attachment ID para poder reemplazarlo después
-          state[shortId].photoAttachmentIds[i] = att.id;
+        // Detectar y marcar duplicados (mismo nombre base de slot) — quedarse solo con el último
+        const slotMap = {}; // slotIdx → att (último que gana)
+        const noSlotAtts = []; // attachments sin slot reconocible
+
+        fotosArr.forEach(att => {
+          const fname = att.filename || '';
+          const match = fname.match(/_(\d+)\.jpg$/i);
+          if(match){
+            const slotIdx = parseInt(match[1]);
+            if(slotIdx < maxSlots) slotMap[slotIdx] = att; // el último sobreescribe duplicados
+          } else {
+            noSlotAtts.push(att);
+          }
         });
+
+        // Asignar slots con nombre reconocible
+        Object.entries(slotMap).forEach(([slotIdx, att]) => {
+          state[shortId].photos[slotIdx] = 'uploaded';
+          state[shortId].photoAttachmentIds[slotIdx] = att.id;
+        });
+
+        // Asignar attachments sin nombre reconocible a slots libres
+        noSlotAtts.forEach(att => {
+          for(let s = 0; s < maxSlots; s++){
+            if(!state[shortId].photos[s]){
+              state[shortId].photos[s] = 'uploaded';
+              state[shortId].photoAttachmentIds[s] = att.id;
+              break;
+            }
+          }
+        });
+
+        // Si hay más attachments en Airtable que slots permitidos, limpiar los excesos
+        if(fotosArr.length > maxSlots && rec.id){
+          const validIds = new Set(Object.values(state[shortId].photoAttachmentIds));
+          const toKeep = fotosArr
+            .filter(att => validIds.has(att.id))
+            .map(att => ({ url: att.url }));
+          if(toKeep.length < fotosArr.length){
+            // Fire-and-forget: limpiar duplicados en Airtable
+            fetch(
+              `https://api.airtable.com/v0/${AT_BASE_ID}/${AT_TBL_ITEMS}/${rec.id}`,
+              {
+                method: 'PATCH',
+                headers: { Authorization: `Bearer ${AT_TOKEN}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fields: { 'Fotos': toKeep } })
+              }
+            ).catch(() => {});
+          }
+        }
       } else {
         // Sin fotos en Airtable, usar N.° fotos cargadas como fallback
-        const fotosCargadas = rec.fields['N.° fotos cargadas'] || 0;
+        const fotosCargadas = Math.min(rec.fields['N.° fotos cargadas'] || 0, maxSlots);
         for(let i = 0; i < fotosCargadas; i++){
-          if(!state[shortId].photos[i]) state[shortId].photos[i] = 'uploaded';
+          state[shortId].photos[i] = 'uploaded';
         }
       }
 
